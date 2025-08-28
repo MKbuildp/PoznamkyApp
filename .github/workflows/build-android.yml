@@ -1,12 +1,7 @@
 name: Build Android APK
 
 on:
-  push:
-    branches: [ main, develop ]
-    tags: [ 'v*' ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch: # Manuální spuštění
+  workflow_dispatch: # Pouze manuální spuštění
 
 jobs:
   build-android:

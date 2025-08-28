@@ -5,11 +5,11 @@
 
 ## 🚀 Přehled
 
-GitHub Actions automaticky sestavuje tvou aplikaci při:
-- Push na `main` nebo `develop` branch
-- Vytvoření tagu (např. `v1.0.0`)
-- Pull request na `main` branch
-- Manuálním spuštění
+GitHub Actions se spouští **pouze ručně** pomocí `workflow_dispatch`:
+- **Nespouští se automaticky** po push nebo pull request
+- **Spouští se pouze** když to chceš
+- **Ideální** pro kontrolované sestavení
+- **Úspora** GitHub Actions minut
 
 ## 📱 Podporované platformy
 
@@ -79,23 +79,25 @@ GitHub Actions automaticky sestavuje tvou aplikaci při:
 
 ## 🎯 Jak používat
 
-### Automatické sestavení
-1. Push kódu na `main` branch
-2. GitHub Actions se automaticky spustí
-3. Počkej na dokončení buildů
-4. Stáhni artifacts z Actions tab
-
-### Manuální spuštění
+### Ruční spuštění (jediný způsob)
 1. Jdi do Actions tab na GitHubu
 2. Vyber workflow (např. "Build All Platforms")
 3. Klikni "Run workflow"
 4. Vyber branch a klikni "Run workflow"
+5. Počkej na dokončení buildů
+6. Stáhni artifacts z Actions tab
 
 ### Vytvoření release
 1. Vytvoř tag: `git tag v1.0.0`
 2. Push tag: `git push origin v1.0.0`
-3. GitHub Actions automaticky vytvoří release
-4. APK a IPA soubory budou dostupné v release
+3. **Manuálně spusť** workflow pro sestavení
+4. Po dokončení buildů vytvoř release ručně
+
+### Vytvoření release
+1. Vytvoř tag: `git tag v1.0.0`
+2. Push tag: `git push origin v1.0.0`
+3. **Manuálně spusť** workflow pro sestavení
+4. Po dokončení buildů vytvoř release ručně
 
 ## 📋 Build proces
 
