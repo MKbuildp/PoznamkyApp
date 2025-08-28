@@ -34,24 +34,15 @@ jobs:
       
     - name: Login to Expo
       run: |
-        echo "Token length: ${#EXPO_TOKEN}"
-        echo "Token starts with: ${EXPO_TOKEN:0:10}..."
-        echo ${{ secrets.EXPO_TOKEN }} | eas login
-      env:
-        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN || '' }}
-        
-    - name: Alternative Expo Login
-      if: failure()
-      run: |
-        echo "Zkouším alternativní login..."
-        export EXPO_TOKEN="${{ secrets.EXPO_TOKEN || '' }}"
-        eas whoami
-        
-    - name: Username/Password Login
-      if: failure()
-      run: |
-        echo "Zkouším username/password login..."
-        echo "${{ secrets.EXPO_USERNAME || '' }}" | eas login --username
+        if [ -n "${{ secrets.EXPO_TOKEN }}" ]; then
+          echo "Přihlašování pomocí EXPO_TOKEN..."
+          export EXPO_TOKEN="${{ secrets.EXPO_TOKEN }}"
+          eas whoami
+        else
+          echo "EXPO_TOKEN není nastaven!"
+          echo "Přihlašování pomocí username/password..."
+          eas login --username mkbuild --password Expo1KM4 --non-interactive
+        fi
         
     - name: Configure EAS Build
       run: |

@@ -1,0 +1,80 @@
+name: Build Android APK (Simple)
+
+on:
+  workflow_dispatch: # Pouze manuální spuštění
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📦 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: 📱 Install dependencies
+      run: npm ci
+      
+    - name: 🔨 Setup EAS CLI
+      run: npm install -g eas-cli@latest
+      
+    - name: 🔐 Login to Expo
+      env:
+        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      run: |
+        if [ -n "$EXPO_TOKEN" ]; then
+          echo "🟢 Přihlašování pomocí EXPO_TOKEN..."
+          eas whoami
+        else
+          echo "🟡 EXPO_TOKEN není nastaven, používám username/password..."
+          eas login --username mkbuild --password Expo1KM4
+        fi
+        
+    - name: ✅ Verify login
+      run: eas whoami
+        
+    - name: 🏗️ Build Android APK
+      run: |
+        echo "🚀 Spouštím build..."
+        eas build --platform android --profile production --non-interactive --wait
+        
+    - name: 📥 Download APK
+      run: |
+        echo "📥 Stahování APK..."
+        # Získáme URL posledního buildu
+        BUILD_URL=$(eas build:list --platform android --status finished --limit 1 --json | jq -r '.[0].artifacts.buildUrl')
+        echo "Build URL: $BUILD_URL"
+        
+        # Stáhneme APK
+        if [ "$BUILD_URL" != "null" ] && [ -n "$BUILD_URL" ]; then
+          curl -L -o PoznamkyApp.apk "$BUILD_URL"
+          echo "✅ APK staženo!"
+        else
+          echo "❌ Nepodařilo se získat URL buildu"
+          exit 1
+        fi
+        
+    - name: 📤 Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PoznamkyApp-Android-${{ github.run_number }}
+        path: PoznamkyApp.apk
+        retention-days: 30
+        
+    - name: 📊 Build Summary
+      run: |
+        echo "## 🎉 Build dokončen!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Platforma:** Android" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build číslo:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Datum:** $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "APK je k dispozici v Artifacts 👆" >> $GITHUB_STEP_SUMMARY

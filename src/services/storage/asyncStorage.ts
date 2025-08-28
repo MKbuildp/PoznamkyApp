@@ -75,3 +75,4 @@ export class TypedAsyncStorage {
 // Zachování zpětné kompatibility - export původního AsyncStorage
 export default AsyncStorage;
 
+

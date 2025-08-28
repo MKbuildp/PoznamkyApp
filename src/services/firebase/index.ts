@@ -15,3 +15,4 @@ export * from './auth';
 // Re-export pro pohodlí
 export { syncService } from '../storage/syncService';
 
+
