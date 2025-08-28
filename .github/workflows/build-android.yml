@@ -1,0 +1,86 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: # Manuální spuštění
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Setup Expo CLI
+      run: npm install -g @expo/cli
+      
+    - name: Setup EAS CLI
+      run: npm install -g eas-cli
+      
+    - name: Login to Expo
+      run: |
+        echo ${{ secrets.EXPO_TOKEN }} | eas login --non-interactive
+      env:
+        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        
+    - name: Configure EAS Build
+      run: |
+        eas build:configure --platform android --non-interactive
+        
+    - name: Build Android APK
+      run: |
+        eas build --platform android --local --output=./PoznamkyApp.apk
+        # Alternativně pro cloud build:
+        # eas build --platform android --non-interactive
+        
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PoznamkyApp-Android
+        path: ./PoznamkyApp.apk
+        retention-days: 30
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ./PoznamkyApp.apk
+        name: Release ${{ github.ref_name }}
+        body: |
+          ## PoznamkyApp Android APK
+          
+          **Verze:** ${{ github.ref_name }}
+          **Platforma:** Android
+          **Datum sestavení:** ${{ github.event.head_commit.timestamp }}
+          
+          ### Změny:
+          - Automaticky sestaveno GitHub Actions
+          - Expo SDK 53
+          - React Native 0.79.2
+          
+          ### Instalace:
+          1. Stáhni APK soubor
+          2. Povol instalaci z neznámých zdrojů
+          3. Nainstaluj aplikaci
+        draft: false
+        prerelease: false

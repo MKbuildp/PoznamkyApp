@@ -1,0 +1,80 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: # Manuální spuštění
+
+jobs:
+  build-ios:
+    runs-on: macos-latest # iOS build vyžaduje macOS
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Setup Expo CLI
+      run: npm install -g @expo/cli
+      
+    - name: Setup EAS CLI
+      run: npm install -g eas-cli
+      
+    - name: Login to Expo
+      run: |
+        echo ${{ secrets.EXPO_TOKEN }} | eas login --non-interactive
+      env:
+        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        
+    - name: Configure EAS Build
+      run: |
+        eas build:configure --platform ios --non-interactive
+        
+    - name: Build iOS IPA
+      run: |
+        eas build --platform ios --local --output=./PoznamkyApp.ipa
+        # Alternativně pro cloud build:
+        # eas build --platform ios --non-interactive
+        
+    - name: Upload IPA artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PoznamkyApp-iOS
+        path: ./PoznamkyApp.ipa
+        retention-days: 30
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ./PoznamkyApp.ipa
+        name: Release ${{ github.ref_name }}
+        body: |
+          ## PoznamkyApp iOS IPA
+          
+          **Verze:** ${{ github.ref_name }}
+          **Platforma:** iOS
+          **Datum sestavení:** ${{ github.event.head_commit.timestamp }}
+          
+          ### Změny:
+          - Automaticky sestaveno GitHub Actions
+          - Expo SDK 53
+          - React Native 0.79.2
+          
+          ### Instalace:
+          1. Stáhni IPA soubor
+          2. Použij AltStore nebo podobný nástroj
+          3. Nainstaluj aplikaci
+        draft: false
+        prerelease: false
