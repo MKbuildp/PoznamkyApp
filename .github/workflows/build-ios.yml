@@ -28,7 +28,7 @@ jobs:
       
     - name: Login to Expo
       run: |
-        echo ${{ secrets.EXPO_TOKEN }} | eas login --non-interactive
+        echo ${{ secrets.EXPO_TOKEN }} | eas login
       env:
         EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         
@@ -60,7 +60,7 @@ jobs:
           
           **Verze:** ${{ github.ref_name }}
           **Platforma:** iOS
-          **Datum sestavení:** ${{ github.event.head_commit.timestamp }}
+          **Datum sestavení:** ${{ github.event.head_commit.timestamp || 'Manuálně spuštěno' }}
           
           ### Změny:
           - Automaticky sestaveno GitHub Actions

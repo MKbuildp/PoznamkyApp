@@ -157,4 +157,4 @@ GitHub Actions se spouští **pouze ručně** pomocí `workflow_dispatch`:
 
 ---
 
-**Úspěšné automatické sestavení! 🎉**
+**Úspěšné ruční sestavení! 🎉**

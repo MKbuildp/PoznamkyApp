@@ -9,7 +9,7 @@ Write-Host ""
 # Kontrola Git stavu
 Write-Host "Kontroluji Git stav..." -ForegroundColor Yellow
 try {
-    $gitStatus = git status 2>$null
+    git status 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Git je jiz inicializovan!" -ForegroundColor Green
         git status
