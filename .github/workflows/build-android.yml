@@ -38,14 +38,20 @@ jobs:
         echo "Token starts with: ${EXPO_TOKEN:0:10}..."
         echo ${{ secrets.EXPO_TOKEN }} | eas login
       env:
-        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN || '' }}
         
     - name: Alternative Expo Login
       if: failure()
       run: |
         echo "Zkouším alternativní login..."
-        export EXPO_TOKEN="${{ secrets.EXPO_TOKEN }}"
+        export EXPO_TOKEN="${{ secrets.EXPO_TOKEN || '' }}"
         eas whoami
+        
+    - name: Username/Password Login
+      if: failure()
+      run: |
+        echo "Zkouším username/password login..."
+        echo "${{ secrets.EXPO_USERNAME || '' }}" | eas login --username
         
     - name: Configure EAS Build
       run: |

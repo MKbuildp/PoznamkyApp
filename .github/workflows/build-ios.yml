@@ -30,7 +30,7 @@ jobs:
       run: |
         echo ${{ secrets.EXPO_TOKEN }} | eas login
       env:
-        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN || '' }}
         
     - name: Configure EAS Build
       run: |
