@@ -122,16 +122,27 @@ GitHub Actions se spouští **pouze ručně** pomocí `workflow_dispatch`:
 
 ## 🚨 Řešení problémů
 
+### Expo login selhal
+1. **Zkontroluj platnost `EXPO_TOKEN`:**
+   - Jdi na [expo.dev](https://expo.dev) → Account Settings → Access Tokens
+   - Vytvoř nový token s názvem `PoznamkyApp-GitHub-Actions`
+   - Zkopíruj token a aktualizuj GitHub Secret
+
+2. **Ověř token formát:**
+   - Token by měl být dlouhý řetězec (cca 40-50 znaků)
+   - Nesmí obsahovat mezery nebo speciální znaky
+   - Musí mít správná oprávnění
+
+3. **Alternativní řešení:**
+   - Zkus `eas whoami` místo `eas login`
+   - Ověř, že token má správná práva pro EAS Build
+   - Zkontroluj, že Expo účet je aktivní
+
 ### Build selhal
 1. Zkontroluj Actions tab pro chyby
 2. Ověř, že `EXPO_TOKEN` je správně nastaven
 3. Zkontroluj, že `eas.json` existuje
 4. Ověř Expo SDK kompatibilitu
-
-### Expo login selhal
-1. Zkontroluj platnost `EXPO_TOKEN`
-2. Ověř, že token má správná oprávnění
-3. Zkus vytvořit nový token
 
 ### Local build selhal
 1. Zkontroluj, že máš nainstalovaný EAS CLI

@@ -34,9 +34,18 @@ jobs:
       
     - name: Login to Expo
       run: |
+        echo "Token length: ${#EXPO_TOKEN}"
+        echo "Token starts with: ${EXPO_TOKEN:0:10}..."
         echo ${{ secrets.EXPO_TOKEN }} | eas login
       env:
         EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        
+    - name: Alternative Expo Login
+      if: failure()
+      run: |
+        echo "Zkouším alternativní login..."
+        export EXPO_TOKEN="${{ secrets.EXPO_TOKEN }}"
+        eas whoami
         
     - name: Configure EAS Build
       run: |
