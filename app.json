@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "PoznamkyApp",
+    "slug": "PoznamkyApp",
+    "version": "1.0.3",
+    "orientation": "portrait",
+    "icon": "./assets/poznamky-icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/poznamky-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "icon": "./assets/poznamky-icon.png",
+      "bundleIdentifier": "com.mkbuild.PoznamkyApp",
+      "buildNumber": "4",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "icon": "./assets/poznamky-icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/poznamky-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "versionCode": 4,
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ab581d85-2b7a-4869-a96e-8b38c6d443db"
+      }
+    }
+  }
+}
