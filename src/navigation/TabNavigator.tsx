@@ -13,6 +13,17 @@ import PoznamkyScreen from '../screens/Poznamky/PoznamkyScreen';
 // Import typů
 import { TabParamList, RootStackParamList } from '../types/navigation';
 
+/**
+ * @description Konstanty pro názvy tabů s vysvětlením
+ * Poznámka: Názvy tabů neodpovídají zobrazovanému textu v tab baru
+ */
+const TAB_NAMES = {
+  VYDAJE: 'ZboziTab', // Zobrazuje "Výdaje" v tab baru
+  PRIJMY: 'VydajeTab', // Zobrazuje "Příjmy" v tab baru  
+  PREHLED: 'PrehledTab', // Zobrazuje "Přehled" v tab baru
+  DOMACNOST: 'PoznamkyTab' // Zobrazuje "Domácnost" v tab baru
+} as const;
+
 // Stack navigátory pro každý tab
 const ZboziStack = createNativeStackNavigator<RootStackParamList>();
 const VydajeStack = createNativeStackNavigator<RootStackParamList>();
@@ -61,18 +72,18 @@ export const TabNavigator = () => {
 
   return (
     <Tab.Navigator
-      initialRouteName="PoznamkyTab"
+      initialRouteName={TAB_NAMES.DOMACNOST}
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: string = '';
 
-          if (route.name === 'ZboziTab') {
+          if (route.name === TAB_NAMES.VYDAJE) {
             iconName = focused ? 'receipt' : 'receipt-outline';
-          } else if (route.name === 'VydajeTab') {
+          } else if (route.name === TAB_NAMES.PRIJMY) {
             iconName = focused ? 'cash' : 'cash-outline';
-          } else if (route.name === 'PrehledTab') {
+          } else if (route.name === TAB_NAMES.PREHLED) {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'PoznamkyTab') {
+          } else if (route.name === TAB_NAMES.DOMACNOST) {
             iconName = focused ? 'storefront' : 'storefront-outline';
           }
 
@@ -94,7 +105,7 @@ export const TabNavigator = () => {
       })}
     >
       <Tab.Screen 
-        name="ZboziTab" 
+        name={TAB_NAMES.VYDAJE} 
         component={ZboziStackScreen} 
         options={{ 
           title: 'Výdaje',
@@ -102,7 +113,7 @@ export const TabNavigator = () => {
         }} 
       />
       <Tab.Screen 
-        name="VydajeTab" 
+        name={TAB_NAMES.PRIJMY} 
         component={VydajeStackScreen} 
         options={{ 
           title: 'Příjmy',
@@ -110,7 +121,7 @@ export const TabNavigator = () => {
         }} 
       />
       <Tab.Screen 
-        name="PrehledTab" 
+        name={TAB_NAMES.PREHLED} 
         component={PrehledStackScreen}
         options={{ 
           title: 'Přehled',
@@ -118,7 +129,7 @@ export const TabNavigator = () => {
         }} 
       />
       <Tab.Screen 
-        name="PoznamkyTab" 
+        name={TAB_NAMES.DOMACNOST} 
         component={PoznamkyStackScreen} 
         options={{ 
           title: 'Domácnost',

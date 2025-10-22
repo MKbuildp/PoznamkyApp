@@ -1,0 +1,95 @@
+# AT CORE RULES - UNIVERZÁLNÍ PRAVIDLA PRO VŠECHNY PROJEKTY
+
+# POKYNY K POUŽÍVÁNÍ
+# Pravidlo 6 se aktivuje pouze na Váš explicitní příkaz (PŘÍKAZ Kód Freeze).
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 1: DŮKLADNÁ, PŘEHLEDNÁ A JEDNOTNÁ DOKUMENTACE
+
+## PŘÍSNÉ POKYNY PRO AI ASISTENTA CURSORU
+1.  **Základní Kontext:** Vždy, při zahájení nového chatu nebo agentní úlohy, NEJPRVE přečti a zpracuj obsah souboru `PROJECT_CONTEXT.md`.
+2.  **Rychlý Přehled:** Pro rychlou orientaci použij pouze sekci `## 1. RYCHLÝ PŘEHLED` ze souboru `PROJECT_CONTEXT.md`.
+3.  **ZÁKAZ Automatické Aktualizace:** Dokumentaci `PROJECT_CONTEXT.md` NIKDY neupravuj ani neaktualizuj automaticky po jakékoliv úpravě kódu.
+4.  **Povolení Aktualizace:** Dokumentaci smíš aktualizovat POUZE na explicitní pokyn uživatele (např. "Aktualizuj PROJECT_CONTEXT.md").
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 2: JEDNOTNÝ STYL A REUSE KOMPONENT
+
+## CÍL: ZAJIŠTĚNÍ VIZUÁLNÍ A KÓDOVÉ KONZISTENCE
+1.  **Priorita Reusability:** Před generováním nové UI komponenty **MUSÍ** AI prohledat adresáře a najít existující, relevantní implementace.
+2.  **Generování Kódu:** Pokud stávající komponenta splňuje požadavek, **MUSÍ** být použita, nikoliv znovu vytvořena. Pokud se vytváří nová komponenta, **MUSÍ** striktně replikovat VIZUÁLNÍ STYL a ARCHITEKTURU již existujících, vizuálně podobných komponent.
+3.  **ZÁKAZ Duplikace:** Vytvoření komponenty se stejnou funkcí a podobným stylem je **přísně zakázáno**.
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 3: PŘÍSTUP K NÁSTROJŮM A KÓDU (BEZPEČNOST A FOKUS)
+
+## POKYNY PRO POUŽITÍ KONTEXTU A EXTERNNÍCH ZDROJŮ
+1.  **Priorita Kódu Projektu:** AI **MUSÍ** primárně vycházet z **existujícího kódu a kontextu** uvnitř projektu.
+2.  **Webový Vyhledávač (@web):** Použití nástroje **@web** je povoleno **POUZE** pro vyhledání dokumentace k externí knihovně, která ještě **NENÍ** v projektu, nebo pro ověření aktuální syntaxe. **ZÁKAZ** použití @web namísto prohledání vlastního kódu.
+3.  **Refaktorování:** Při jakémkoliv refaktorování, AI **MUSÍ** automaticky zkontrolovat a odstranit nepoužívané importy a mrtvý kód (dead code).
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 4: STRATEGIE ŘEŠENÍ SLOŽITÝCH ÚKOLŮ
+
+## POKYNY PRO PLÁNOVÁNÍ A POSTUP
+1.  **Sekvenční Myšlení:** Pro úkoly, které vyžadují změny ve **více než jednom souboru**, AI **MUSÍ** postupovat metodou sekvenčního myšlení (Step-by-Step, Plan and Execute).
+2.  **Tvorba Plánu:** Před jakoukoliv změnou kódu, AI **MUSÍ** nejprve navrhnout **stručný plán implementace** a ten předložit uživateli ke schválení.
+3.  **Vytváření Testů:** Při implementaci nové business logiky, AI **MUSÍ** automaticky zvážit a navrhnout vytvoření **nových unit testů**.
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 5: STRICTNÍ RESPONZIVITA A PŘÍSTUPNOST (MOBILNÍ)
+
+## POŽADAVKY NA UI A STYLOVÁNÍ
+1.  **Responzivní Design (MOBILNÍ):** Všechny rozměry **MUSÍ** být definovány pomocí **bezjednotkových DP (Density-independent pixels)**. **ZÁKAZ** pevných pixelových (px) hodnot.
+2.  **Rozložení:** AI **MUSÍ** vycházet z **Dimensions API** (`Dimensions.get('window')`) pro dynamické rozložení. Vždy používej Flexbox pro rozložení.
+3.  **Přístupnost (a11y):** Všechny interaktivní prvky **MUSÍ** mít správně nastavené `accessibilityRole` a `accessibilityLabel`.
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 6: STABILITA BUILDU A PREVENCE REGRESÍ
+
+## DVOJITÁ KONTROLA PO ÚSPĚŠNÉM BUILDU
+1.  **Aktivace Pravidla:** Pravidlo je **NEAKTIVNÍ**, dokud uživatel explicitně neodešle zprávu: **"Aktivovat Klíčové pravidlo 6. STABILITA BUILDU."**
+2.  **Chráněné Soubory (CRITICAL BUILD ARTIFACTS):** Po aktivaci platí **STRIKTNÍ ZÁKAZ** neohlášených změn u `package.json`, buildovacích konfiguračních souborů a skriptů pro lokální buildy.
+3.  **Povinnost Oznámení Před Změnou (Code Freeze):** Pokud úkol vyžaduje úpravu chráněného souboru, AI **MUSÍ** uživatele **HLASITĚ UPOZORNIT** a vyžádat si potvrzení: **"🚨 UPOZORNĚNÍ: Pravidlo 6 je AKTIVNÍ! Úkol vyžaduje úpravu chráněného souboru [NÁZEV_SOUBORU]. Chcete přesto pokračovat? Potvrďte: 'ANO, UPRAVIT'."**
+4.  **Historie Chyb:** Pokaždé, když build selže a AI chybu opraví, **MUSÍ** automaticky zaznamenat událost a řešení do `PROJECT_CONTEXT.md` (sekce BUILD_FAILURE_HISTORY).
+5.  **Povinná Kontrola Regrese:** Před dokončením jakékoliv implementace kódu, AI **MUSÍ** provést kontrolu regrese proti historii chyb a zajistit, že nová implementace nevrátí žádnou z dříve opravených chyb.
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 7: SYSTÉM ROZESTUPŮ (SPACING SYSTEM - MOBILNÍ)
+
+## POKYNY PRO MARGINY A PADDINGY
+1.  **Striktní Použití Systému:** Všechny **marginy** a **paddingy** musí být definovány a aplikovány **VÝHRADNĚ** pomocí **DESIGN TOKENŮ** (např. `theme.spacing.md`).
+2.  **ZÁKAZ:** Používání hard-coded číselných hodnot pro rozestupy (např. `padding: 15`). Vždy preferuj tokeny.
+3.  **Oddělení Zodpovědnosti:** Vzhledem k neexistenci kaskády, AI **MUSÍ** pro rozestupy mezi prvky upřednostnit použití `margin` na daném elementu nebo **Flexbox `gap`** (pokud je podporováno), ale s důrazem na jednotné hodnoty z tokenů.
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 8: MODULARIZACE STYLŮ (STYLING ARCHITEKTURA - MOBILNÍ)
+
+## PŘÍSNÉ POKYNY PRO STYLOVÁNÍ A JEHO UMÍSTĚNÍ
+1.  **Princip Jediného Místa:** Styly pro komponentu **MUSÍ** být definovány **výhradně v rámci přidruženého souboru** (např. `Button.styles.ts` nebo `StyleSheet.create` v `Button.tsx`).
+2.  **ZÁKAZ:** **Inline styly** (`style={{...}}`) jsou povoleny POUZE pro dynamické změny hodnot (např. barva na základě stavu).
+3.  **Kaskáda a Dědičnost:** AI **MUSÍ** brát v úvahu, že v nativních stylech **NEEXISTUJE KASKÁDA** a styly se nedědí. Všechny potřebné styly **MUSÍ** být explicitně definovány v každé komponentě.
+
+# -----------------------------------------------------------------
+
+# KLÍČOVÉ PRAVIDLO 10: STRIKTNÍ STRUKTURA SLOŽEK (MOBILNÍ/NATIVE)
+
+## ZÁKLADNÍ ARCHITEKTURA
+1.  **Dodržování Zavedené Struktury:** AI MUSÍ prostudovat stávající strom složek (typicky `/src` nebo `/app`) a VŽDY umístit nové soubory do té nejpřesnější a nejpodobnější existující složky.
+2.  **Oddělení Zodpovědnosti (Separation of Concerns):** AI MUSÍ striktně dodržovat následující standardní oddělení:
+
+    * **/components:** Zde MUSÍ být umístěny znovupoužitelné, hloupé (statické) UI prvky. Vždy odděl styly do samostatného souboru (např. `Button/Button.tsx` a `Button/Button.styles.ts`).
+    * **/screens:** Zde MUSÍ být umístěny komponenty, které reprezentují celé obrazovky navigace (s navigační logikou).
+    * **/navigation:** Zde MUSÍ být uložena veškerá konfigurační a navigační logika (stack navigátory, taby).
+    * **/context nebo /redux:** Zde MUSÍ být umístěny soubory globálního stavu a business logiky.
+    * **/assets nebo /constants:** Zde MUSÍ být umístěny obrázky, fonty a konfigurační soubory pro tokeny (Pravidlo 7).
+
+3.  **Nativní Soubory:** Při úpravě nativních souborů (uvnitř `/ios` nebo `/android`) MUSÍ AI striktně dodržovat **Pravidlo 6** a měnit je POUZE, pokud je to nevyhnutelné pro build/integraci modulu, s **explicitním potvrzením uživatele**.

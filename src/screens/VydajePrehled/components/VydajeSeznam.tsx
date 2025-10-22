@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
     color: '#E53935',
   },
   flatList: {
-    maxHeight: 400,
+    // Odstraněno maxHeight omezení pro zobrazení všech výdajů
   },
   flatListContent: {
     flexGrow: 1,
