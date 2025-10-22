@@ -11,8 +11,8 @@
 - 🏠 **Domácnost** - Domácí výdaje (jídlo, pravidelné, jiné)
 
 ### Technologie:
-- React Native 0.79.5 + Expo SDK 53
-- TypeScript
+- React Native 0.81.5 + Expo SDK 54
+- TypeScript 5.9.2
 - Firebase Firestore (synchronizace dat)
 - React Navigation 6
 - AsyncStorage (lokální úložiště)
@@ -143,12 +143,12 @@ const TAB_NAMES = {
 ### 5.1 Závislosti
 ```json
 {
-  "expo": "^53.0.22",
-  "react": "19.0.0", 
-  "react-native": "^0.79.5",
+  "expo": "^54.0.0",
+  "react": "19.1.0", 
+  "react-native": "^0.81.5",
   "@firebase/firestore": "^4.9.1",
   "@react-navigation/bottom-tabs": "^6.6.1",
-  "@react-native-async-storage/async-storage": "2.1.2",
+  "@react-native-async-storage/async-storage": "2.2.0",
   "date-fns": "^4.1.0"
 }
 ```
