@@ -11,29 +11,16 @@ export const VydajeSeznam: React.FC<VydajeSeznamProps> = ({
   vybranyMesic,
   vybranyRok,
   nacitaSe,
-  zmenitMesic,
   formatujCastku,
   getNazevMesice,
+  onEditVydaj,
+  isCollapsible = false,
+  isVisible = true,
+  onToggleVisibility,
 }) => {
   if (nacitaSe) {
     return (
       <View style={styles.container}>
-        <View style={styles.rokPrepinac}>
-          <TouchableOpacity 
-            style={styles.rokTlacitko} 
-            onPress={() => zmenitMesic(-1)}
-          >
-            <Text style={styles.rokTlacitkoText}>{'<'}</Text>
-          </TouchableOpacity>
-          <Text style={styles.rokText}>{`${getNazevMesice(vybranyMesic)} ${vybranyRok}`}</Text>
-          <TouchableOpacity 
-            style={styles.rokTlacitko} 
-            onPress={() => zmenitMesic(1)}
-          >
-            <Text style={styles.rokTlacitkoText}>{'>'}</Text>
-          </TouchableOpacity>
-        </View>
-        
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#E53935" />
           <Text style={styles.loadingText}>Načítání dat...</Text>
@@ -45,22 +32,6 @@ export const VydajeSeznam: React.FC<VydajeSeznamProps> = ({
   if (vydaje.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.rokPrepinac}>
-          <TouchableOpacity 
-            style={styles.rokTlacitko} 
-            onPress={() => zmenitMesic(-1)}
-          >
-            <Text style={styles.rokTlacitkoText}>{'<'}</Text>
-          </TouchableOpacity>
-          <Text style={styles.rokText}>{`${getNazevMesice(vybranyMesic)} ${vybranyRok}`}</Text>
-          <TouchableOpacity 
-            style={styles.rokTlacitko} 
-            onPress={() => zmenitMesic(1)}
-          >
-            <Text style={styles.rokTlacitkoText}>{'>'}</Text>
-          </TouchableOpacity>
-        </View>
-        
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>Žádné výdaje v {getNazevMesice(vybranyMesic)} {vybranyRok}</Text>
           <Text style={styles.emptySubText}>Přidejte výdaje v sekci Příjmy/Výdaje/Tržby</Text>
@@ -105,25 +76,23 @@ export const VydajeSeznam: React.FC<VydajeSeznamProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Přepínač měsíců */}
-      <View style={styles.rokPrepinac}>
+      {/* Rozklikávací hlavička */}
+      {isCollapsible && (
         <TouchableOpacity 
-          style={styles.rokTlacitko} 
-          onPress={() => zmenitMesic(-1)}
+          style={styles.rozklikavaciHeader}
+          onPress={onToggleVisibility}
         >
-          <Text style={styles.rokTlacitkoText}>{'<'}</Text>
+          <Text style={styles.rozklikavaciHeaderText}>
+            Výdaje {isVisible ? '▼' : '▶'}
+          </Text>
         </TouchableOpacity>
-        <Text style={styles.rokText}>{`${getNazevMesice(vybranyMesic)} ${vybranyRok}`}</Text>
-        <TouchableOpacity 
-          style={styles.rokTlacitko} 
-          onPress={() => zmenitMesic(1)}
-        >
-          <Text style={styles.rokTlacitkoText}>{'>'}</Text>
-        </TouchableOpacity>
-      </View>
+      )}
 
-      {/* Záhlaví tabulky */}
-      <View style={styles.tableHeader}>
+      {/* Obsah - zobrazí se pouze pokud není rozklikávací nebo je viditelný */}
+      {(!isCollapsible || isVisible) && (
+        <>
+          {/* Záhlaví tabulky */}
+          <View style={styles.tableHeader}>
         <View style={styles.datumContainer}>
           <Text style={styles.headerText}></Text>
         </View>
@@ -141,11 +110,17 @@ export const VydajeSeznam: React.FC<VydajeSeznamProps> = ({
       {/* Seznam výdajů */}
       <View style={styles.flatList}>
         {vydaje.map((item, index) => (
-          <View key={`${item.datum}-${index}`}>
+          <TouchableOpacity 
+            key={`${item.datum}-${index}`}
+            onLongPress={() => onEditVydaj && onEditVydaj(item)}
+            delayLongPress={500}
+          >
             {renderItem({ item })}
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
+        </>
+      )}
     </View>
   );
 };
@@ -158,30 +133,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: '#880E4F',
-  },
-  rokPrepinac: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  rokTlacitko: {
-    padding: 4,
-    minWidth: 30,
-    alignItems: 'center',
-  },
-  rokTlacitkoText: {
-    fontSize: 20,
-    color: '#880E4F',
-  },
-  rokText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginHorizontal: 16,
-    color: '#333',
+    borderColor: '#E0E0E0',
   },
   tableHeader: {
     flexDirection: 'row',
@@ -190,9 +142,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     backgroundColor: '#f5f5f5',
     borderBottomWidth: 1,
-    borderBottomColor: '#000',
+    borderBottomColor: '#E0E0E0',
     borderTopWidth: 1,
-    borderTopColor: '#000',
+    borderTopColor: '#E0E0E0',
   },
   headerText: {
     fontSize: 12,
@@ -283,5 +235,19 @@ const styles = StyleSheet.create({
   },
   flatListContent: {
     flexGrow: 1,
+  },
+
+  // Styly pro rozklikávací hlavičku
+  rozklikavaciHeader: {
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: '#E0E0E0',
+  },
+  rozklikavaciHeaderText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
   },
 }); 

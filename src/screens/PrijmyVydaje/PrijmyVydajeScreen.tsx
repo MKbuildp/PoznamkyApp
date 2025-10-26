@@ -1,9 +1,24 @@
-/** PrijmyVydajeScreen - Sloučená obrazovka pro správu příjmů, výdajů a tržeb */
+/** PrijmyVydajeScreen - Sloučená obrazovka pro správu příjmů, výdajů a tržeb
+ * 
+ * DŮLEŽITÉ: Tato obrazovka se zobrazuje jako tab "Koloniál" v aplikaci
+ * Původní název byl "Příjmy", ale uživatel ji označuje jako "Koloniál"
+ * Obsahuje funkcionalitu příjmů, výdajů a tržeb
+ */
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, ScrollView, KeyboardAvoidingView, Platform, View, Text, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
-import { FormularPrijmu } from './components/FormularPrijmu';
+import { StyleSheet, ScrollView, KeyboardAvoidingView, Platform, View, Text, ActivityIndicator, TouchableOpacity, RefreshControl, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FormularPrijemVydaj } from '../../components/FormularPrijemVydaj';
+import { CelkovyPrehled } from '../../components/CelkovyPrehled';
+import { NovyZaznamButton } from '../../components/NovyZaznamButton';
+import { NovyZaznamModal } from '../../components/NovyZaznamModal';
+import { JinePrijmySeznam } from './components/JinePrijmySeznam';
 import { usePrijmyVydaje } from './hooks/usePrijmyVydaje';
+import { useVydaje } from '../Vydaje/hooks/useVydaje';
 import { useObchodPrehled } from '../ObchodPrehledScreen/hooks/useObchodPrehled';
+import { useVydajePrehled } from '../VydajePrehled/hooks/useVydajePrehled';
+import { VydajeSeznam } from '../VydajePrehled/components/VydajeSeznam';
+import { EditVydajModal, VydajPrijmy } from './components/EditVydajModal';
+import { EditTrzbaModal } from './components/EditTrzbaModal';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
 import { useFocusEffect } from '@react-navigation/native';
@@ -13,9 +28,22 @@ type Props = NativeStackScreenProps<RootStackParamList, 'PrijmyVydaje'>;
 
 /**
  * @description Sloučená obrazovka pro zadávání příjmů, výdajů a zobrazení tržeb
+ * 
+ * POZNÁMKA: Tato obrazovka se zobrazuje jako tab "Koloniál" v aplikaci
+ * Původní název byl "Příjmy", ale uživatel ji označuje jako "Koloniál"
  */
 export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [selectedVydaj, setSelectedVydaj] = useState<VydajPrijmy | null>(null);
+  const [editTrzbaModalVisible, setEditTrzbaModalVisible] = useState(false);
+  const [selectedTrzba, setSelectedTrzba] = useState<any>(null);
+  const [aktivniTab, setAktivniTab] = useState<'prijem' | 'vydaj'>('prijem');
+  const [trzbyVisible, setTrzbyVisible] = useState(false);
+  const [jinePrijmyVisible, setJinePrijmyVisible] = useState(false);
+  const [vydajeVisible, setVydajeVisible] = useState(false);
+  const [formularVisible, setFormularVisible] = useState(false);
+  const [novyZaznamModalVisible, setNovyZaznamModalVisible] = useState(false);
   const { synchronizujZFirestore } = useFirestoreSync();
   
   const { 
@@ -23,6 +51,29 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
     prijmyHandlers, 
     utils 
   } = usePrijmyVydaje();
+
+  // Hook pro výdaje přehled
+  const { 
+    vydaje,
+    vybranyMesic: vydajeMesic,
+    vybranyRok: vydajeRok,
+    nacitaSe: vydajeNacitaSe,
+    zmenitMesic: vydajeZmenitMesic,
+    formatujCastku: vydajeFormatujCastku,
+    getNazevMesice: vydajeGetNazevMesice,
+    nactiData: vydajeNactiData,
+    smazatPosledniVydaj
+  } = useVydajePrehled();
+
+  // Hook pro výdaje (formulář)
+  const { 
+    state: vydajeState, 
+    handlers: vydajeHandlers, 
+    utils: vydajeUtils 
+  } = useVydaje();
+
+  // Destrukturování editovatVydaj z handlers
+  const { editovatVydaj, smazatVydaj } = vydajeHandlers;
 
   // State pro tržby
   const [vybranyMesic, setVybranyMesic] = useState(new Date().getMonth());
@@ -36,7 +87,9 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
     formatujDatumZeStringu,
     nactiData,
     nactiJinePrijmy,
-    smazatJinyPrijem
+    smazatJinyPrijem,
+    editovatTrzbu,
+    smazatTrzbu,
   } = useObchodPrehled(vybranyMesic, vybranyRok);
 
   // Přidáme useFocusEffect pro aktualizaci dat při návratu na obrazovku
@@ -44,7 +97,8 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
     useCallback(() => {
       nactiData();
       nactiJinePrijmy();
-    }, [nactiData, nactiJinePrijmy])
+      vydajeNactiData(vybranyMesic, vybranyRok);
+    }, [nactiData, nactiJinePrijmy, vydajeNactiData, vybranyMesic, vybranyRok])
   );
 
   /**
@@ -58,10 +112,138 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
       // Aktualizace lokálních dat
       await nactiData();
       await nactiJinePrijmy();
+      // Aktualizace výdajů
+      await vydajeUtils.nactiRocniVydaje();
+      await vydajeNactiData(vybranyMesic, vybranyRok);
+      // Aktualizace příjmů
+      await utils.nactiRocniPrijem();
     } catch (error) {
       console.error('Chyba při aktualizaci dat:', error);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  /**
+   * @description Otevření modálního okna pro editaci výdaje
+   */
+  const handleEditVydaj = (vydaj: any) => {
+    const vydajPrijmy: VydajPrijmy = {
+      id: vydaj.id || Date.now().toString(),
+      castka: vydaj.castka,
+      datum: vydaj.datum,
+      kategorie: vydaj.kategorie,
+      dodavatel: vydaj.dodavatel,
+      firestoreId: vydaj.firestoreId
+    };
+    setSelectedVydaj(vydajPrijmy);
+    setEditModalVisible(true);
+  };
+
+  /**
+   * @description Zavření modálního okna
+   */
+  const handleCloseEditModal = () => {
+    setEditModalVisible(false);
+    setSelectedVydaj(null);
+  };
+
+  /**
+   * @description Uložení editovaného výdaje
+   */
+  const handleSaveEditedVydaj = async (editedVydaj: VydajPrijmy) => {
+    try {
+      // Konverze VydajPrijmy na Vydaj pro hook
+      const vydaj: any = {
+        id: editedVydaj.id,
+        castka: editedVydaj.castka,
+        datum: editedVydaj.datum,
+        kategorie: editedVydaj.kategorie,
+        dodavatel: editedVydaj.dodavatel,
+        firestoreId: editedVydaj.firestoreId
+      };
+      
+      await editovatVydaj(vydaj);
+      await nactiData(); // Aktualizace dat
+    } catch (error) {
+      console.error('Chyba při ukládání editovaného výdaje:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * @description Otevření modálního okna pro editaci tržby
+   */
+  const handleEditTrzba = (zaznam: any) => {
+    // Najdeme původní tržbu v denniZaznamy podle data
+    const trzba = denniZaznamy.find(d => d.datum === zaznam.datum);
+    if (trzba && trzba.castka > 0) {
+      // Najdeme původní příjem v AsyncStorage podle data a částky
+      AsyncStorage.getItem('seznamPrijmuData_v2').then(jsonValue => {
+        if (jsonValue) {
+          const vsechnyPrijmy = JSON.parse(jsonValue);
+          const datumPrijmu = new Date(zaznam.datum);
+          
+          // Najdeme příjem kategorie Tržba pro tento den
+          const trzbaPrijem = vsechnyPrijmy.find((p: any) => {
+            const datumP = new Date(p.datum);
+            return p.kategorie === 'Tržba' && 
+                   datumP.getFullYear() === datumPrijmu.getFullYear() &&
+                   datumP.getMonth() === datumPrijmu.getMonth() &&
+                   datumP.getDate() === datumPrijmu.getDate();
+          });
+          
+          if (trzbaPrijem) {
+            setSelectedTrzba(trzbaPrijem);
+            setEditTrzbaModalVisible(true);
+          } else {
+            Alert.alert('Chyba', 'Tržba nebyla nalezena');
+          }
+        }
+      }).catch(error => {
+        console.error('Chyba při hledání tržby:', error);
+        Alert.alert('Chyba', 'Nepodařilo se načíst tržbu');
+      });
+    } else {
+      Alert.alert('Info', 'Pro tento den není žádná tržba k editaci');
+    }
+  };
+
+  /**
+   * @description Zavření modálního okna pro tržby
+   */
+  const handleCloseEditTrzbaModal = () => {
+    setEditTrzbaModalVisible(false);
+    setSelectedTrzba(null);
+  };
+
+  /**
+   * @description Uložení editované tržby
+   */
+  const handleSaveEditedTrzba = async (editedTrzba: any) => {
+    try {
+      await editovatTrzbu(editedTrzba);
+    } catch (error) {
+      console.error('Chyba při ukládání editované tržby:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * @description Handler pro uložení nového záznamu z modálního okna
+   */
+  const handleNovyZaznamSubmit = async (data: any) => {
+    try {
+      if (data.kategorie === 'Tržba' || data.kategorie === 'Jiné') {
+        // Příjem
+        await prijmyHandlers.handleSubmitWithData(data);
+      } else {
+        // Výdaj
+        await vydajeHandlers.handleSubmitWithData(data);
+      }
+    } catch (error) {
+      console.error('Chyba při ukládání nového záznamu:', error);
+      throw error;
     }
   };
 
@@ -82,6 +264,9 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
 
     setVybranyMesic(novyMesic);
     setVybranyRok(novyRok);
+    
+    // Synchronizace s výdaji - aktualizujeme i výdaje pro nový měsíc
+    vydajeNactiData(novyMesic, novyRok);
   };
 
   /**
@@ -124,6 +309,76 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
     };
   };
 
+  /**
+   * @description Vypočítá celkové příjmy (Tržby + Jiné příjmy) v daném měsíci
+   */
+  const vypoctiCelkovePrijmy = () => {
+    // Součet tržeb z denniZaznamy
+    const trzby = denniZaznamy.reduce((sum, zaznam) => sum + zaznam.castka, 0);
+    
+    // Součet jiných příjmů
+    const jinePrijmySum = jinePrijmy.reduce((sum, prijem) => sum + prijem.castka, 0);
+    
+    return trzby + jinePrijmySum;
+  };
+
+  /**
+   * @description Vypočítá celkové výdaje (Zboží + Provoz) v daném měsíci
+   */
+  const vypoctiCelkoveVydaje = () => {
+    // Filtrujeme výdaje pro aktuální měsíc a rok (používáme stejné proměnné jako Příjmy)
+    const mesicniVydaje = vydaje.filter(vydaj => {
+      const datum = new Date(vydaj.datum);
+      return datum.getMonth() === vybranyMesic && datum.getFullYear() === vybranyRok;
+    });
+    
+    // Součet výdajů za Zboží a Provoz
+    const vydajeSum = mesicniVydaje.reduce((sum, vydaj) => {
+      if (vydaj.kategorie === 'ZBOZI' || vydaj.kategorie === 'PROVOZ') {
+        return sum + vydaj.castka;
+      }
+      return sum;
+    }, 0);
+    
+    return vydajeSum;
+  };
+
+  /**
+   * @description Vypočítá výdaje za Zboží v daném měsíci
+   */
+  const vypoctiVydajeZbozi = () => {
+    const mesicniVydaje = vydaje.filter(vydaj => {
+      const datum = new Date(vydaj.datum);
+      return datum.getMonth() === vybranyMesic && datum.getFullYear() === vybranyRok;
+    });
+    
+    const zboziSum = mesicniVydaje.reduce((sum, vydaj) => {
+      if (vydaj.kategorie === 'ZBOZI') {
+        return sum + vydaj.castka;
+      }
+      return sum;
+    }, 0);
+    return zboziSum;
+  };
+
+  /**
+   * @description Vypočítá výdaje za Provoz v daném měsíci
+   */
+  const vypoctiVydajeProvoz = () => {
+    const mesicniVydaje = vydaje.filter(vydaj => {
+      const datum = new Date(vydaj.datum);
+      return datum.getMonth() === vybranyMesic && datum.getFullYear() === vybranyRok;
+    });
+    
+    const provozSum = mesicniVydaje.reduce((sum, vydaj) => {
+      if (vydaj.kategorie === 'PROVOZ') {
+        return sum + vydaj.castka;
+      }
+      return sum;
+    }, 0);
+    return provozSum;
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -145,62 +400,46 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
           />
         }
       >
-        {/* Formulář pro příjmy - nahoře */}
-        <FormularPrijmu
-          castka={state.prijmy.castka}
-          datum={state.prijmy.datum}
-          kategorie={state.prijmy.kategorie}
-          popis={state.prijmy.popis}
-          isDatePickerVisible={state.prijmy.isDatePickerVisible}
-          isLoading={state.prijmy.isLoading}
-          onCastkaChange={prijmyHandlers.handleCastkaChange}
-          onDatumChange={prijmyHandlers.handleDatumChange}
-          onKategorieChange={prijmyHandlers.handleKategorieChange}
-          onPopisChange={prijmyHandlers.handlePopisChange}
-          onSubmit={prijmyHandlers.handleSubmit}
-          onDatePickerVisibilityChange={prijmyHandlers.handleDatePickerVisibilityChange}
+        {/* Celkový přehled - HORNÍ */}
+        <CelkovyPrehled
+          vybranyMesic={vybranyMesic}
+          vybranyRok={vybranyRok}
+          onZmenitMesic={zmenitMesic}
+          prijmy={vypoctiCelkovePrijmy()}
+          vydaje={vypoctiCelkoveVydaje()}
+          zbozi={vypoctiVydajeZbozi()}
+          provoz={vypoctiVydajeProvoz()}
+          celkem={vypoctiCelkovePrijmy() - vypoctiCelkoveVydaje()}
+          formatujCastku={formatujCastku}
+          getNazevMesice={getNazevMesice}
         />
 
-        {/* Tlačítko pro smazání posledního příjmu */}
-        <TouchableOpacity 
-          style={styles.smazatTlacitko}
-          onPress={prijmyHandlers.smazatPosledniPrijem}
-        >
-          <Text style={styles.smazatTlacitkoText}>🗑️ Smazat poslední příjem</Text>
-        </TouchableOpacity>
+        {/* Nové tlačítko Nový záznam */}
+        <NovyZaznamButton
+          onPress={() => setNovyZaznamModalVisible(true)}
+          title="Nový záznam"
+        />
 
         {/* Sekce Tržby - dole */}
-        <View style={styles.trzbySekce}>
-          <Text style={styles.trzbyNadpis}>Tržby</Text>
-          
+        <View>
           {nacitaSe ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#007AFF" />
             </View>
           ) : (
             <>
-              {/* Tabulka tržeb */}
-              <View style={styles.tabulkaKarticka}>
-                {/* Přepínač měsíců */}
-                <View style={styles.mesicPrepinac}>
-                  <TouchableOpacity 
-                    style={styles.mesicTlacitko} 
-                    onPress={() => zmenitMesic(-1)}
-                  >
-                    <Text style={styles.mesicTlacitkoText}>{'<'}</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.mesicText}>
-                    {`${getNazevMesice(vybranyMesic)} ${vybranyRok}`}
-                  </Text>
-                  <TouchableOpacity 
-                    style={styles.mesicTlacitko} 
-                    onPress={() => zmenitMesic(1)}
-                  >
-                    <Text style={styles.mesicTlacitkoText}>{'>'}</Text>
-                  </TouchableOpacity>
-                </View>
+              {/* Tabulka tržeb - rozklikávací */}
+              {/* Nové tlačítko Tržby */}
+              <NovyZaznamButton
+                onPress={() => setTrzbyVisible(!trzbyVisible)}
+                title="Tržby"
+                isCollapsible={true}
+                isExpanded={trzbyVisible}
+              />
 
-                <View style={styles.dvousloupcovaKontejner}>
+              {trzbyVisible && (
+                <View style={styles.tabulkaKarticka}>
+                  <View style={styles.dvousloupcovaKontejner}>
                   {/* Levý sloupec */}
                   <View style={styles.sloupec}>
                     <View style={styles.tableHeader}>
@@ -215,13 +454,15 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
                           const denVTydnu = getNazevDne(zaznam.den, vybranyMesic, vybranyRok);
                           const jePosledniRadek = index === levySloupec.length - 1;
                           return (
-                            <View 
+                            <TouchableOpacity 
                               key={zaznam.datum} 
                               style={[
                                 styles.radekTabulky, 
                                 jePosledniRadek && styles.posledniRadek,
                                 vikend && styles.vikendovyRadek
                               ]}
+                              onLongPress={() => handleEditTrzba(zaznam)}
+                              delayLongPress={500}
                             >
                               <Text style={[styles.bunkaTabulkyDen, vikend && styles.vikendovyText]}>
                                 <Text style={styles.poradoveCislo}>{`${zaznam.den}. `}</Text>
@@ -233,7 +474,7 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
                               ]}>
                                 {formatujCastku(zaznam.castka)}
                               </Text>
-                            </View>
+                            </TouchableOpacity>
                           );
                         });
                       })()}
@@ -254,13 +495,15 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
                           const denVTydnu = getNazevDne(zaznam.den, vybranyMesic, vybranyRok);
                           const jePosledniRadek = index === pravySloupec.length - 1;
                           return (
-                            <View 
+                            <TouchableOpacity 
                               key={zaznam.datum} 
                               style={[
                                 styles.radekTabulky, 
                                 jePosledniRadek && styles.posledniRadek,
                                 vikend && styles.vikendovyRadek
                               ]}
+                              onLongPress={() => handleEditTrzba(zaznam)}
+                              delayLongPress={500}
                             >
                               <Text style={[styles.bunkaTabulkyDen, vikend && styles.vikendovyText]}>
                                 <Text style={styles.poradoveCislo}>{`${zaznam.den}. `}</Text>
@@ -272,41 +515,92 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
                               ]}>
                                 {formatujCastku(zaznam.castka)}
                               </Text>
-                            </View>
+                            </TouchableOpacity>
                           );
                         });
                       })()}
                     </View>
                   </View>
+                  </View>
                 </View>
-              </View>
+              )}
 
-              {/* Tabulka jiných příjmů - pod tabulkou tržeb (bez FlatList) */}
-              <View style={styles.jinePrijmyContainer}>
-                <Text style={styles.jinePrijmyNadpis}>Jiné příjmy</Text>
-                {jinePrijmy.length === 0 ? (
-                  <View style={styles.prazdnyStav}>
-                    <Text style={styles.prazdnyStavText}>Žádné jiné příjmy</Text>
-                  </View>
-                ) : (
-                  <View style={styles.jinePrijmySeznam}>
-                    {jinePrijmy.map((prijem) => (
-                      <View key={prijem.id} style={styles.jinyPrijemRadek}>
-                        <View style={styles.popisContainer}>
-                          <Text style={styles.popisText}>{prijem.popis || 'Bez popisu'}</Text>
-                          <Text style={styles.datumText}>{formatujDatumZeStringu(prijem.datum)}</Text>
-                        </View>
-                        <Text style={styles.castkaText}>{formatujCastku(prijem.castka)}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                <Text style={styles.napoveda}>Dlouhým stisknutím smažete příjem</Text>
-              </View>
+              {/* Tabulka jiných příjmů - rozklikávací */}
+              {/* Nové tlačítko Jiné příjmy */}
+              <NovyZaznamButton
+                onPress={() => setJinePrijmyVisible(!jinePrijmyVisible)}
+                title="Jiné příjmy"
+                isCollapsible={true}
+                isExpanded={jinePrijmyVisible}
+              />
+
+              {jinePrijmyVisible && (
+                <View style={styles.uniformniRozestup}>
+                  <JinePrijmySeznam
+                    jinePrijmy={jinePrijmy}
+                    formatujCastku={formatujCastku}
+                    formatujDatumZeStringu={formatujDatumZeStringu}
+                    isCollapsible={false}
+                    isVisible={true}
+                  />
+                </View>
+              )}
+
+              {/* Kontejner s výdaji - rozklikávací */}
+              {/* Nové tlačítko Výdaje */}
+              <NovyZaznamButton
+                onPress={() => setVydajeVisible(!vydajeVisible)}
+                title="Výdaje"
+                isCollapsible={true}
+                isExpanded={vydajeVisible}
+              />
+
+              {vydajeVisible && (
+                <View style={styles.uniformniRozestup}>
+                  <VydajeSeznam
+                    vydaje={vydaje}
+                    vybranyMesic={vybranyMesic}
+                    vybranyRok={vybranyRok}
+                    nacitaSe={vydajeNacitaSe}
+                    formatujCastku={vydajeFormatujCastku}
+                    getNazevMesice={vydajeGetNazevMesice}
+                    onEditVydaj={handleEditVydaj}
+                    isCollapsible={false}
+                    isVisible={true}
+                  />
+                </View>
+              )}
+
             </>
           )}
         </View>
       </ScrollView>
+
+      {/* Modální okno pro editaci výdaje */}
+      <EditVydajModal
+        visible={editModalVisible}
+        vydaj={selectedVydaj}
+        onClose={handleCloseEditModal}
+        onSave={handleSaveEditedVydaj}
+        onDelete={smazatVydaj}
+      />
+
+      {/* Modální okno pro editaci tržby */}
+      <EditTrzbaModal
+        visible={editTrzbaModalVisible}
+        trzba={selectedTrzba}
+        onClose={handleCloseEditTrzbaModal}
+        onSave={handleSaveEditedTrzba}
+        onDelete={smazatTrzbu}
+      />
+
+      {/* Modální okno pro nový záznam */}
+      <NovyZaznamModal
+        visible={novyZaznamModalVisible}
+        onClose={() => setNovyZaznamModalVisible(false)}
+        onSubmit={handleNovyZaznamSubmit}
+        type="kolonial"
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -323,17 +617,13 @@ const styles = StyleSheet.create({
     padding: 8,
     paddingBottom: 20,
   },
-  // Nové styly pro tržby
-  trzbySekce: {
-    marginTop: 20,
+
+  // Styly pro jednotné rozestupy
+  uniformniRozestup: {
+    marginTop: 10, // Zvětšeno o 30% (8 * 1.3 = 10.4 ≈ 10)
   },
-  trzbyNadpis: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 8,
+  vetsiMezeraNahore: {
+    marginTop: 13, // Zvětšeno o 30% navíc (10 * 1.3 = 13)
   },
   loadingContainer: {
     padding: 20,
@@ -345,34 +635,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 0,
     elevation: 2,
-    alignSelf: 'stretch',
     borderWidth: 2,
-    borderColor: '#880E4F',
+    borderColor: '#E0E0E0',
     margin: 8,
     overflow: 'hidden',
-  },
-  mesicPrepinac: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  mesicTlacitko: {
-    padding: 4,
-    minWidth: 30,
-    alignItems: 'center',
-  },
-  mesicTlacitkoText: {
-    fontSize: 20,
-    color: '#880E4F',
-  },
-  mesicText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginHorizontal: 16,
-    color: '#333',
   },
   dvousloupcovaKontejner: {
     flexDirection: 'row',
@@ -385,7 +651,7 @@ const styles = StyleSheet.create({
   pravySloupec: {
     flex: 1,
     borderLeftWidth: 1,
-    borderLeftColor: '#000',
+    borderLeftColor: '#E0E0E0',
   },
   tableHeader: {
     flexDirection: 'row',
@@ -393,9 +659,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     backgroundColor: '#f5f5f5',
     borderBottomWidth: 1,
-    borderBottomColor: '#000',
+    borderBottomColor: '#E0E0E0',
     borderTopWidth: 1,
-    borderTopColor: '#000',
+    borderTopColor: '#E0E0E0',
   },
   headerText: {
     flex: 1,
@@ -445,86 +711,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
   },
 
-  // Styly pro jiné příjmy (bez FlatList)
-  jinePrijmyContainer: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    margin: 8,
-    padding: 16,
-    elevation: 2,
-    borderWidth: 2,
-    borderColor: '#880E4F',
-  },
-  jinePrijmyNadpis: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  jinePrijmySeznam: {
-    maxHeight: 200,
-  },
-  jinyPrijemRadek: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  popisContainer: {
-    flex: 1,
-    marginRight: 12,
-  },
-  popisText: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
-  },
-  datumText: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  castkaText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#43A047',
-  },
-  prazdnyStav: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  prazdnyStavText: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  napoveda: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  smazatTlacitko: {
-    backgroundColor: '#FF5252',
-    marginHorizontal: 8,
-    marginVertical: 8,
+
+  // Styly pro rozklikávací hlavičky
+  rozklikavaciHeader: {
+    backgroundColor: '#F5F5F5',
     padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    borderBottomWidth: 2,
+    borderBottomColor: '#E0E0E0',
   },
-  smazatTlacitkoText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+  rozklikavaciHeaderText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
   },
+
+
 }); 

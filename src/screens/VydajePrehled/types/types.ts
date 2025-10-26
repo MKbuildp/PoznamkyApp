@@ -57,9 +57,12 @@ export interface VydajeSeznamProps {
   vybranyMesic: number;
   vybranyRok: number;
   nacitaSe: boolean;
-  zmenitMesic: (posun: number) => void;
   formatujCastku: (castka: number) => string;
   getNazevMesice: (mesic: number) => string;
+  onEditVydaj?: (vydaj: any) => void;
+  isCollapsible?: boolean;
+  isVisible?: boolean;
+  onToggleVisibility?: () => void;
 }
 
 /**

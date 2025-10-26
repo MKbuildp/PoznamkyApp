@@ -28,7 +28,7 @@ export interface Vydaj {
 export interface VydajeState {
   castka: string;
   datum: Date;
-  kategorie: KategorieVydaju;
+  kategorie: KategorieVydaju | undefined;
   dodavatel: string;
   vybranyRok: number;
   isDatePickerVisible: boolean;
@@ -48,7 +48,7 @@ export interface VydajeState {
 export interface FormularVydajuProps {
   castka: string;
   datum: Date;
-  kategorie: KategorieVydaju;
+  kategorie: KategorieVydaju | undefined;
   dodavatel: string;
   isDatePickerVisible: boolean;
   isLoading: boolean;
@@ -86,6 +86,9 @@ export interface UseVydajeReturn {
     handleDodavatelSelect: (dodavatel: string) => void;
     handleSubmit: () => void;
     handleDatePickerVisibilityChange: (isVisible: boolean) => void;
+    smazatPosledniVydaj: () => void;
+    editovatVydaj: (editedVydaj: Vydaj) => Promise<void>;
+    smazatVydaj: (vydaj: Vydaj) => Promise<void>;
   };
   utils: {
     formatujDatum: (date: Date) => string;

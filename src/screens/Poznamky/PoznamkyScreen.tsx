@@ -1,9 +1,12 @@
 /** DomacnostScreen - Obrazovka pro správu domácích výdajů */
 import React, { useState } from 'react';
 import { StyleSheet, ScrollView, KeyboardAvoidingView, Platform, View, Text, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
-import { FormularDomacnosti } from './components/FormularDomacnosti';
+import { FormularDomacnostiV2 } from './components/FormularDomacnostiV2';
+import { EditVydajModal } from './components/EditVydajModal';
+import { NovyZaznamButton } from '../../components/NovyZaznamButton';
+import { NovyZaznamModal } from '../../components/NovyZaznamModal';
 import { useDomacnost } from './hooks/useDomacnost';
-import { KategorieDomacnostVydaju } from './types/types';
+import { KategorieDomacnostVydaju, DomacnostVydaj } from './types/types';
 import { useFirestoreSync } from '../../hooks/useFirestoreSync';
 
 /**
@@ -11,6 +14,13 @@ import { useFirestoreSync } from '../../hooks/useFirestoreSync';
  */
 const DomacnostScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [selectedVydaj, setSelectedVydaj] = useState<DomacnostVydaj | null>(null);
+  // Stavy pro rozklikávání komponent - defaultně sbalené
+  const [formularVisible, setFormularVisible] = useState(false);
+  const [denniPrehledVisible, setDenniPrehledVisible] = useState(false);
+  const [podrobnyPrehledVisible, setPodrobnyPrehledVisible] = useState(false);
+  const [novyZaznamModalVisible, setNovyZaznamModalVisible] = useState(false);
   const { synchronizujZFirestore } = useFirestoreSync();
   
   const {
@@ -24,6 +34,7 @@ const DomacnostScreen: React.FC = () => {
     handleUcelChange,
     handleDatePickerVisibilityChange,
     handleSubmit,
+    handleSubmitWithData,
     nactiData,
     zmenitMesic,
     vybranyMesic,
@@ -33,6 +44,8 @@ const DomacnostScreen: React.FC = () => {
     jeVikend,
     rozdelZaznamyDoSloupcu,
     smazatPosledniVydaj,
+    editovatVydaj,
+    smazatVydaj,
   } = useDomacnost();
 
   /**
@@ -49,6 +62,41 @@ const DomacnostScreen: React.FC = () => {
       console.error('Chyba při aktualizaci dat:', error);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  /**
+   * @description Otevření modálního okna pro editaci výdaje
+   */
+  const handleEditVydaj = (vydaj: DomacnostVydaj) => {
+    setSelectedVydaj(vydaj);
+    setEditModalVisible(true);
+  };
+
+  /**
+   * @description Zavření modálního okna
+   */
+  const handleCloseEditModal = () => {
+    setEditModalVisible(false);
+    setSelectedVydaj(null);
+  };
+
+  /**
+   * @description Uložení editovaného výdaje
+   */
+  const handleSaveEditedVydaj = async (editedVydaj: DomacnostVydaj) => {
+    await editovatVydaj(editedVydaj);
+  };
+
+  /**
+   * @description Handler pro uložení nového záznamu z modálního okna
+   */
+  const handleNovyZaznamSubmit = async (data: any) => {
+    try {
+      await handleSubmitWithData(data);
+    } catch (error) {
+      console.error('Chyba při ukládání nového záznamu:', error);
+      throw error;
     }
   };
 
@@ -84,7 +132,7 @@ const DomacnostScreen: React.FC = () => {
               >
                 <Text style={styles.mesicTlacitkoTextHorni}>{'<'}</Text>
               </TouchableOpacity>
-              <View style={[styles.tabulkaBunka, { borderRightWidth: 0 }]}>
+              <View style={[styles.tabulkaBunka, { borderRightWidth: 0, backgroundColor: '#FFF3E0' }]}>
                 <Text style={styles.celkemNadpis}>{getNazevMesice(vybranyMesic)} {vybranyRok}</Text>
               </View>
               <TouchableOpacity 
@@ -121,10 +169,13 @@ const DomacnostScreen: React.FC = () => {
             </View>
             
             {/* Třetí řádek - Jídlo, Jiné, Pravidelné (3 buňky) */}
-            <View style={[styles.tabulkaRadek, { borderBottomWidth: 0 }]}>
+            <View style={styles.tabulkaRadek}>
               {/* Jídlo */}
               <View style={styles.tabulkaBunka}>
-                <Text style={styles.druhaKategorieNazev}>Jídlo</Text>
+                <View style={styles.kategorieNazevContainer}>
+                  <View style={[styles.kategoriePuntik, styles.puntikJidlo]} />
+                  <Text style={styles.druhaKategorieNazev}>Jídlo</Text>
+                </View>
                 <Text style={[styles.druhaKategorieCastka, styles.jidloCastka]}>
                   {formatujCastku(mesicniVydaje
                     .filter(v => v.kategorie === KategorieDomacnostVydaju.JIDLO)
@@ -135,7 +186,10 @@ const DomacnostScreen: React.FC = () => {
               
               {/* Jiné */}
               <View style={styles.tabulkaBunka}>
-                <Text style={styles.druhaKategorieNazev}>Jiné</Text>
+                <View style={styles.kategorieNazevContainer}>
+                  <View style={[styles.kategoriePuntik, styles.puntikJine]} />
+                  <Text style={styles.druhaKategorieNazev}>Jiné</Text>
+                </View>
                 <Text style={[styles.druhaKategorieCastka, styles.jineCastka]}>
                   {formatujCastku(mesicniVydaje
                     .filter(v => v.kategorie === KategorieDomacnostVydaju.JINE)
@@ -145,8 +199,11 @@ const DomacnostScreen: React.FC = () => {
               </View>
               
               {/* Pravidelné */}
-              <View style={[styles.tabulkaBunka, { borderRightWidth: 0 }]}>
-                <Text style={styles.druhaKategorieNazev}>Pravidelné</Text>
+              <View style={styles.tabulkaBunka}>
+                <View style={styles.kategorieNazevContainer}>
+                  <View style={[styles.kategoriePuntik, styles.puntikPravidelne]} />
+                  <Text style={styles.druhaKategorieNazev}>Pravidelné</Text>
+                </View>
                 <Text style={[styles.druhaKategorieCastka, styles.pravidelneCastka]}>
                   {formatujCastku(mesicniVydaje
                     .filter(v => v.kategorie === KategorieDomacnostVydaju.PRAVIDELNE)
@@ -155,27 +212,44 @@ const DomacnostScreen: React.FC = () => {
                 </Text>
               </View>
             </View>
+            
+            {/* Čtvrtý řádek - Celkem (1 buňka přes celou šířku) */}
+            <View style={[styles.tabulkaRadek, { borderBottomWidth: 0 }]}>
+              <View style={[styles.tabulkaBunka, { borderRightWidth: 0, flex: 1 }]}>
+                <Text style={styles.celkemNazev}>Celkem</Text>
+                <Text style={[
+                  styles.celkemCastka,
+                  (() => {
+                    const prijmy = mesicniVydaje
+                      .filter(v => v.kategorie === KategorieDomacnostVydaju.PRIJEM)
+                      .reduce((sum, v) => sum + v.castka, 0);
+                    const vydaje = mesicniVydaje
+                      .filter(v => v.kategorie !== KategorieDomacnostVydaju.PRIJEM)
+                      .reduce((sum, v) => sum + v.castka, 0);
+                    const celkem = prijmy - vydaje;
+                    return celkem >= 0 ? styles.celkemPozitivni : styles.celkemNegativni;
+                  })()
+                ]}>
+                  {formatujCastku((() => {
+                    const prijmy = mesicniVydaje
+                      .filter(v => v.kategorie === KategorieDomacnostVydaju.PRIJEM)
+                      .reduce((sum, v) => sum + v.castka, 0);
+                    const vydaje = mesicniVydaje
+                      .filter(v => v.kategorie !== KategorieDomacnostVydaju.PRIJEM)
+                      .reduce((sum, v) => sum + v.castka, 0);
+                    return prijmy - vydaje;
+                  })())}
+                </Text>
+              </View>
+            </View>
           </View>
         )}
 
-        {/* Formulář pro domácí výdaje - DRUHÝ */}
-        <FormularDomacnosti
-          castka={state.castka}
-          datum={state.datum}
-          kategorie={state.kategorie}
-          ucel={state.ucel}
-          isDatePickerVisible={state.isDatePickerVisible}
-          isLoading={state.isLoading}
-          onCastkaChange={handleCastkaChange}
-          onDatumChange={handleDatumChange}
-          onKategorieChange={handleKategorieChange}
-          onUcelChange={handleUcelChange}
-          onSubmit={handleSubmit}
-          onDatePickerVisibilityChange={handleDatePickerVisibilityChange}
-          onSmazatPosledni={smazatPosledniVydaj}
+        {/* Nové tlačítko Nový záznam */}
+        <NovyZaznamButton
+          onPress={() => setNovyZaznamModalVisible(true)}
+          title="Nový záznam"
         />
-
-
 
         {/* Měsíční přehled - TŘETÍ */}
         <View style={styles.tabulkaSekce}>
@@ -187,11 +261,19 @@ const DomacnostScreen: React.FC = () => {
           ) : (
             <>
               {/* Tabulka domácích výdajů */}
-              <View style={styles.tabulkaKarticka}>
+              {/* Nové tlačítko Denní přehled */}
+              <NovyZaznamButton
+                onPress={() => setDenniPrehledVisible(!denniPrehledVisible)}
+                title="Denní přehled"
+                isCollapsible={true}
+                isExpanded={denniPrehledVisible}
+              />
 
-                <View style={styles.dvousloupcovaKontejner}>
-                  {/* Levý sloupec */}
-                  <View style={styles.sloupec}>
+              {denniPrehledVisible && (
+                <View style={[styles.tabulkaKarticka, styles.uniformniRozestup]}>
+                  <View style={styles.dvousloupcovaKontejner}>
+                    {/* Levý sloupec */}
+                    <View style={styles.sloupec}>
                     <View style={styles.tableHeader}>
                       <Text style={styles.headerText}>Den</Text>
                       <Text style={[styles.headerText, { textAlign: 'right', paddingRight: 10 }]}>Částka</Text>
@@ -218,7 +300,7 @@ const DomacnostScreen: React.FC = () => {
                               </Text>
                               <Text style={[
                                 styles.bunkaTabulkyCastka,
-                                zaznam.castka > 0 && styles.castkaFialova
+                                zaznam.castka > 0 ? styles.castkaCervena : styles.castkaCerna
                               ]}>
                                 {formatujCastku(zaznam.castka)}
                               </Text>
@@ -257,7 +339,7 @@ const DomacnostScreen: React.FC = () => {
                               </Text>
                               <Text style={[
                                 styles.bunkaTabulkyCastka,
-                                zaznam.castka > 0 && styles.castkaFialova
+                                zaznam.castka > 0 ? styles.castkaCervena : styles.castkaCerna
                               ]}>
                                 {formatujCastku(zaznam.castka)}
                               </Text>
@@ -267,22 +349,32 @@ const DomacnostScreen: React.FC = () => {
                       })()}
                     </View>
                   </View>
+                  </View>
                 </View>
-              </View>
+              )}
 
 
 
               {/* Seznam jednotlivých výdajů - DOLE */}
-              <View style={styles.seznamContainer}>
+              {/* Nové tlačítko Podrobný přehled */}
+              <NovyZaznamButton
+                onPress={() => setPodrobnyPrehledVisible(!podrobnyPrehledVisible)}
+                title="Podrobný přehled"
+                isCollapsible={true}
+                isExpanded={podrobnyPrehledVisible}
+              />
 
-                {mesicniVydaje.length === 0 ? (
-                  <View style={styles.prazdnyStav}>
-                    <Text style={styles.prazdnyStavText}>Žádné výdaje v {getNazevMesice(vybranyMesic)} {vybranyRok}</Text>
-                  </View>
-                ) : (
+              {podrobnyPrehledVisible && (
+                <View style={[styles.seznamContainer, styles.uniformniRozestup]}>
                   <>
-                    {/* Záhlaví tabulky */}
-                    <View style={styles.tableHeader}>
+                    {mesicniVydaje.length === 0 ? (
+                      <View style={styles.prazdnyStav}>
+                        <Text style={styles.prazdnyStavText}>Žádné výdaje v {getNazevMesice(vybranyMesic)} {vybranyRok}</Text>
+                      </View>
+                    ) : (
+                      <>
+                        {/* Záhlaví tabulky */}
+                        <View style={styles.tableHeader}>
                       <View style={styles.datumContainerHeader}>
                         <Text style={styles.headerText}></Text>
                       </View>
@@ -297,9 +389,9 @@ const DomacnostScreen: React.FC = () => {
                       </View>
                     </View>
 
-                    {/* Seznam výdajů (bez příjmů) */}
+                    {/* Seznam všech záznamů (výdaje i příjmy) */}
                     <View style={styles.seznamObsah}>
-                      {mesicniVydaje.filter(vydaj => vydaj.kategorie !== KategorieDomacnostVydaju.PRIJEM).map((vydaj) => {
+                      {mesicniVydaje.map((vydaj) => {
                         const datum = new Date(vydaj.datum);
                         const den = datum.getDate().toString().padStart(2, '0');
                         const mesic = (datum.getMonth() + 1).toString().padStart(2, '0');
@@ -310,12 +402,17 @@ const DomacnostScreen: React.FC = () => {
                           ? (vydaj.ucel && vydaj.ucel.trim() ? vydaj.ucel : 'Jídlo')
                           : vydaj.kategorie === KategorieDomacnostVydaju.PRAVIDELNE
                           ? (vydaj.ucel && vydaj.ucel.trim() ? vydaj.ucel : 'Pravidelné')
+                          : vydaj.kategorie === KategorieDomacnostVydaju.PRIJEM
+                          ? (vydaj.ucel && vydaj.ucel.trim() ? vydaj.ucel : 'Příjem')
                           : (vydaj.ucel && vydaj.ucel.trim() ? vydaj.ucel : 'Jiné');
 
-
-
                         return (
-                          <View key={vydaj.id} style={styles.vydajRadek}>
+                          <TouchableOpacity 
+                            key={vydaj.id} 
+                            style={styles.vydajRadek}
+                            onLongPress={() => handleEditVydaj(vydaj)}
+                            delayLongPress={500}
+                          >
                             <View style={styles.radekContent}>
                               <View style={styles.datumContainer}>
                                 <Text style={styles.datumText}>{formatovaneDatum}</Text>
@@ -325,6 +422,7 @@ const DomacnostScreen: React.FC = () => {
                                   styles.kategorieTecka,
                                   vydaj.kategorie === KategorieDomacnostVydaju.JIDLO ? styles.teckaJidlo : 
                                   vydaj.kategorie === KategorieDomacnostVydaju.PRAVIDELNE ? styles.teckaPravidelne : 
+                                  vydaj.kategorie === KategorieDomacnostVydaju.PRIJEM ? styles.teckaPrijem :
                                   styles.teckaJine
                                 ]} />
                               </View>
@@ -334,20 +432,42 @@ const DomacnostScreen: React.FC = () => {
                                 </Text>
                               </View>
                               <View style={styles.castkaVydajeContainer}>
-                                <Text style={styles.castkaVydajeText}>{formatujCastku(vydaj.castka)}</Text>
+                                <Text style={[
+                                  styles.castkaVydajeText,
+                                  vydaj.kategorie === KategorieDomacnostVydaju.PRIJEM ? styles.castkaPrijemText : styles.castkaVydajeText
+                                ]}>{formatujCastku(vydaj.castka)}</Text>
                               </View>
                             </View>
-                          </View>
+                          </TouchableOpacity>
                         );
                       })}
                     </View>
                   </>
-                )}
-              </View>
+                    )}
+                  </>
+                </View>
+              )}
             </>
           )}
         </View>
       </ScrollView>
+
+      {/* Modální okno pro editaci výdaje */}
+      <EditVydajModal
+        visible={editModalVisible}
+        vydaj={selectedVydaj}
+        onClose={handleCloseEditModal}
+        onSave={handleSaveEditedVydaj}
+        onDelete={smazatVydaj}
+      />
+
+      {/* Modální okno pro nový záznam */}
+      <NovyZaznamModal
+        visible={novyZaznamModalVisible}
+        onClose={() => setNovyZaznamModalVisible(false)}
+        onSubmit={handleNovyZaznamSubmit}
+        type="domacnost"
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -366,7 +486,35 @@ const styles = StyleSheet.create({
   },
   // Styly pro tabulku
   tabulkaSekce: {
-    marginTop: 20,
+    // Odstraněn marginTop pro jednotné rozestupy
+  },
+
+  // Styly pro hlavičku Denní přehled uvnitř tabulky
+  denniPrehledHeaderInside: {
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: '#E0E0E0',
+  },
+  denniPrehledHeaderText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+  },
+
+  // Styly pro hlavičku Podrobný přehled uvnitř tabulky
+  podrobnyPrehledHeaderInside: {
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: '#E0E0E0',
+  },
+  podrobnyPrehledHeaderText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
   },
 
   loadingContainer: {
@@ -379,11 +527,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 0,
     elevation: 2,
-    alignSelf: 'stretch',
-    borderWidth: 2,
-    borderColor: '#9C27B0', // Fialová pro domácnost
     margin: 8,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
     overflow: 'hidden',
+  },
+  uniformniRozestup: {
+    marginTop: 10, // Zvětšeno o 30% (8 * 1.3 = 10.4 ≈ 10)
+  },
+  vetsiMezeraNahore: {
+    marginTop: 13, // Zvětšeno o 30% navíc (10 * 1.3 = 13)
   },
 
   dvousloupcovaKontejner: {
@@ -397,7 +550,7 @@ const styles = StyleSheet.create({
   pravySloupec: {
     flex: 1,
     borderLeftWidth: 1,
-    borderLeftColor: '#000',
+    borderLeftColor: '#E0E0E0', // Změněno z černé na šedou
   },
   tableHeader: {
     flexDirection: 'row',
@@ -405,9 +558,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     backgroundColor: '#f5f5f5',
     borderBottomWidth: 1,
-    borderBottomColor: '#000',
+    borderBottomColor: '#E0E0E0', // Změněno z černé na šedou
     borderTopWidth: 1,
-    borderTopColor: '#000',
+    borderTopColor: '#E0E0E0', // Změněno z černé na šedou
   },
 
   headerText: {
@@ -447,12 +600,18 @@ const styles = StyleSheet.create({
   bunkaTabulkyCastka: {
     flex: 1,
     textAlign: 'right',
-    color: '#9C27B0', // Fialová barva pro částku
-    fontSize: 12,
+    color: '#000000', // Základní černá barva
+    fontSize: 13, // Změněno z 12 na 13
     paddingRight: 10,
   },
   castkaFialova: {
-    color: '#9C27B0', // Fialová barva pro nenulové hodnoty
+    color: '#E53935', // Červená barva pro nenulové hodnoty
+  },
+  castkaCervena: {
+    color: '#E53935', // Červená barva pro nenulové hodnoty
+  },
+  castkaCerna: {
+    color: '#000000', // Černá barva pro nulové hodnoty
   },
   vikendovyRadek: {
     backgroundColor: '#F5F5F5',
@@ -464,13 +623,13 @@ const styles = StyleSheet.create({
     margin: 8,
     elevation: 2,
     borderWidth: 2,
-    borderColor: '#9C27B0',
+    borderColor: '#E0E0E0', // Stejná barva jako FormularDomacnostiV2
     overflow: 'hidden',
   },
   tabulkaRadek: {
     flexDirection: 'row',
     borderBottomWidth: 2,
-    borderBottomColor: '#9C27B0',
+    borderBottomColor: '#E0E0E0', // Šedé čáry jako FormularDomacnostiV2
     minHeight: 50,
   },
   tabulkaBunka: {
@@ -479,7 +638,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRightWidth: 2,
-    borderRightColor: '#9C27B0',
+    borderRightColor: '#E0E0E0', // Šedé čáry jako FormularDomacnostiV2
   },
   celkemNadpis: {
     fontSize: 18,
@@ -500,10 +659,11 @@ const styles = StyleSheet.create({
     minWidth: 30,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#E0E0E0', // Šedé pozadí pro přepínací prvky
   },
   mesicTlacitkoTextHorni: {
     fontSize: 18,
-    color: '#9C27B0',
+    color: '#000000', // Černá barva pro šipky
     fontWeight: 'bold',
   },
 
@@ -514,7 +674,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   hlavniKategorieCastka: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
   },
 
@@ -526,7 +686,7 @@ const styles = StyleSheet.create({
   },
   druhaKategorieCastka: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'normal', // Odstraněno tučné písmo
   },
   prijemCastka: {
     color: '#4CAF50', // Zelená pro příjmy
@@ -535,23 +695,46 @@ const styles = StyleSheet.create({
     color: '#E53935', // Červená pro výdaje
   },
   jidloCastka: {
-    color: '#2196F3', // Modrá pro jídlo
+    color: '#000000', // Černá barva pro jídlo
   },
   jineCastka: {
-    color: '#FF9800', // Oranžová pro jiné
+    color: '#000000', // Černá barva pro jiné
   },
   pravidelneCastka: {
-    color: '#9C27B0', // Fialová pro pravidelné
+    color: '#000000', // Černá barva pro pravidelné
+  },
+  
+  // Styly pro barevné puntíky
+  kategorieNazevContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  kategoriePuntik: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  puntikJidlo: {
+    backgroundColor: '#2196F3', // Modrá pro jídlo
+  },
+  puntikJine: {
+    backgroundColor: '#FF9800', // Oranžová pro jiné
+  },
+  puntikPravidelne: {
+    backgroundColor: '#9C27B0', // Fialová pro pravidelné
   },
   // Styly pro seznam výdajů
   seznamContainer: {
     backgroundColor: 'white',
     borderRadius: 8,
-    margin: 8,
     elevation: 2,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: '#9C27B0',
+    borderColor: '#E0E0E0', // Stejná barva jako FormularDomacnostiV2
+    margin: 8,
   },
 
   tableHeader: {
@@ -561,9 +744,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     backgroundColor: '#f5f5f5',
     borderBottomWidth: 1,
-    borderBottomColor: '#000',
+    borderBottomColor: '#E0E0E0', // Změněno z černé na šedou
     borderTopWidth: 1,
-    borderTopColor: '#000',
+    borderTopColor: '#E0E0E0', // Změněno z černé na šedou
   },
   headerText: {
     fontSize: 12,
@@ -627,6 +810,9 @@ const styles = StyleSheet.create({
   teckaPravidelne: {
     backgroundColor: '#9C27B0', // Fialová pro pravidelné
   },
+  teckaPrijem: {
+    backgroundColor: '#4CAF50', // Zelená pro příjmy
+  },
   ucelContainer: {
     flex: 1,
     paddingHorizontal: 2,
@@ -642,7 +828,11 @@ const styles = StyleSheet.create({
   },
   castkaVydajeText: {
     fontSize: 13,
-    color: '#9C27B0',
+    color: '#E53935', // Červená barva místo černé
+  },
+  castkaPrijemText: {
+    fontSize: 13,
+    color: '#4CAF50', // Zelená barva pro příjmy
   },
   prazdnyStav: {
     padding: 24,
@@ -655,6 +845,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#666',
     marginBottom: 8,
+  },
+  celkemNazev: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  celkemCastka: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  celkemPozitivni: {
+    color: '#4CAF50', // Zelená pro kladný výsledek
+  },
+  celkemNegativni: {
+    color: '#E53935', // Červená pro záporný výsledek
   },
 
 });

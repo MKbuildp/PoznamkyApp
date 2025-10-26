@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FirestoreService, FIRESTORE_COLLECTIONS } from '../../../services/firestoreService';
 import { 
   Prijem, 
   KategoriePrijmu,
@@ -182,6 +183,91 @@ export const useObchodPrehled = (
     }
   }, [nactiJinePrijmy, nactiData, nactiMesicniVydaje]);
 
+  // Editace tržby
+  const editovatTrzbu = useCallback(async (editedTrzba: Prijem) => {
+    try {
+      const jsonValue = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
+      if (!jsonValue) {
+        throw new Error('Žádné příjmy k editaci');
+      }
+
+      const vsechnyPrijmy: Prijem[] = JSON.parse(jsonValue);
+      const trzbaIndex = vsechnyPrijmy.findIndex(p => p.id === editedTrzba.id);
+      
+      if (trzbaIndex === -1) {
+        throw new Error('Tržba nebyla nalezena');
+      }
+
+      // Aktualizace v AsyncStorage
+      vsechnyPrijmy[trzbaIndex] = editedTrzba;
+      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(vsechnyPrijmy));
+
+      // Aktualizace v Firestore, pokud má firestoreId
+      if (editedTrzba.firestoreId) {
+        try {
+          const firestoreData = {
+            castka: editedTrzba.castka,
+            datum: editedTrzba.datum,
+            kategorie: editedTrzba.kategorie,
+            popis: editedTrzba.popis || ''
+          };
+          
+          await FirestoreService.aktualizujPrijem(editedTrzba.firestoreId, firestoreData);
+        } catch (firestoreError) {
+          console.error('Chyba při aktualizaci v Firestore:', firestoreError);
+          // Pokračujeme i při chybě Firestore
+        }
+      }
+
+      // Aktualizace dat
+      await nactiData();
+      await nactiJinePrijmy();
+      await nactiMesicniVydaje();
+      
+      Alert.alert('Úspěch', 'Tržba byla úspěšně upravena');
+    } catch (error) {
+      console.error('Chyba při editaci tržby:', error);
+      Alert.alert('Chyba', 'Nepodařilo se upravit tržbu');
+      throw error;
+    }
+  }, [nactiData, nactiJinePrijmy, nactiMesicniVydaje]);
+
+  // Smazání tržby
+  const smazatTrzbu = useCallback(async (trzba: Prijem) => {
+    try {
+      const jsonValue = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
+      if (!jsonValue) {
+        throw new Error('Žádné příjmy k smazání');
+      }
+
+      const vsechnyPrijmy: Prijem[] = JSON.parse(jsonValue);
+      const aktualizovanaData = vsechnyPrijmy.filter(p => p.id !== trzba.id);
+      
+      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(aktualizovanaData));
+
+      // Smazání z Firestore, pokud má firestoreId
+      if (trzba.firestoreId) {
+        try {
+          await FirestoreService.smazDokument(FIRESTORE_COLLECTIONS.PRIJMY, trzba.firestoreId);
+        } catch (firestoreError) {
+          console.error('Chyba při mazání z Firestore:', firestoreError);
+          // Pokračujeme i při chybě Firestore
+        }
+      }
+
+      // Aktualizace dat
+      await nactiData();
+      await nactiJinePrijmy();
+      await nactiMesicniVydaje();
+      
+      Alert.alert('Úspěch', 'Tržba byla úspěšně smazána');
+    } catch (error) {
+      console.error('Chyba při mazání tržby:', error);
+      Alert.alert('Chyba', 'Nepodařilo se smazat tržbu');
+      throw error;
+    }
+  }, [nactiData, nactiJinePrijmy, nactiMesicniVydaje]);
+
   return {
     ...stav,
     jinePrijmy,
@@ -192,5 +278,7 @@ export const useObchodPrehled = (
     nactiJinePrijmy,
     nactiMesicniVydaje,
     smazatJinyPrijem,
+    editovatTrzbu,
+    smazatTrzbu,
   };
 }; 

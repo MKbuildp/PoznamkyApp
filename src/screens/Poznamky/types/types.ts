@@ -30,7 +30,7 @@ export interface DomacnostState {
   // Formulář
   castka: string;
   datum: Date;
-  kategorie: KategorieDomacnostVydaju;
+  kategorie: KategorieDomacnostVydaju | undefined;
   ucel: string;
   isDatePickerVisible: boolean;
   isLoading: boolean;
@@ -66,6 +66,7 @@ export interface UseDomacnostReturn {
     pravySloupec: DenniZaznamDomacnosti[];
   };
   smazatPosledniVydaj: () => void;
+  editovatVydaj: (editedVydaj: DomacnostVydaj) => Promise<void>;
 }
 
 /** Props pro komponentu FormularDomacnosti */

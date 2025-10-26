@@ -7,16 +7,16 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<TabParamList>;
   Prehled: undefined;
-  Vydaje: undefined;
+  WaxDream: undefined;
   Prijmy: undefined;
-  VydajePrehled: undefined;
   Poznamky: undefined;
   PrijmyVydaje: undefined;
+  ObchodPrehled: { mesic: number; rok: number };
 };
 
 /** Typy pro Bottom Tab Navigator */
 export type TabParamList = {
-  ZboziTab: undefined;
+  WaxDreamTab: undefined;
   VydajeTab: undefined;
   PrehledTab: undefined;
   PoznamkyTab: undefined;

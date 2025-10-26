@@ -89,6 +89,53 @@ export const useFirestoreSync = () => {
         await AsyncStorage.setItem('domacnostVydajeData_v1', JSON.stringify(domacnostVydaje));
       }
 
+      // Synchronizace WaxDream příjmů
+      const waxdreamPrijmyData = await AsyncStorage.getItem('waxdream_prijmy');
+      if (waxdreamPrijmyData) {
+        const waxdreamPrijmy = JSON.parse(waxdreamPrijmyData);
+        for (const prijem of waxdreamPrijmy) {
+          if (!prijem.firestoreId) {
+            try {
+              const firestoreId = await FirestoreService.ulozWaxDreamPrijem({
+                castka: prijem.castka,
+                datum: prijem.datum,
+                popis: prijem.popis,
+                rok: prijem.rok
+              });
+              
+              prijem.firestoreId = firestoreId;
+            } catch (error) {
+              console.error('Chyba při synchronizaci WaxDream příjmu:', error);
+            }
+          }
+        }
+        await AsyncStorage.setItem('waxdream_prijmy', JSON.stringify(waxdreamPrijmy));
+      }
+
+      // Synchronizace WaxDream výdajů
+      const waxdreamVydajeData = await AsyncStorage.getItem('waxdream_vydaje');
+      if (waxdreamVydajeData) {
+        const waxdreamVydaje = JSON.parse(waxdreamVydajeData);
+        for (const vydaj of waxdreamVydaje) {
+          if (!vydaj.firestoreId) {
+            try {
+              const firestoreId = await FirestoreService.ulozWaxDreamVydaj({
+                castka: vydaj.castka,
+                datum: vydaj.datum,
+                kategorie: vydaj.kategorie,
+                dodavatel: vydaj.dodavatel,
+                rok: vydaj.rok
+              });
+              
+              vydaj.firestoreId = firestoreId;
+            } catch (error) {
+              console.error('Chyba při synchronizaci WaxDream výdaje:', error);
+            }
+          }
+        }
+        await AsyncStorage.setItem('waxdream_vydaje', JSON.stringify(waxdreamVydaje));
+      }
+
       setLastSyncTime(new Date());
     } catch (error) {
       console.error('Chyba při synchronizaci do Firestore:', error);
@@ -107,10 +154,12 @@ export const useFirestoreSync = () => {
     
     try {
       // Načtení dat z Firestore
-      const [prijmy, vydaje, domacnostVydaje] = await Promise.all([
+      const [prijmy, vydaje, domacnostVydaje, waxdreamPrijmy, waxdreamVydaje] = await Promise.all([
         FirestoreService.nactiPrijmy(),
         FirestoreService.nactiVydaje(),
-        FirestoreService.nactiDomacnostVydaje()
+        FirestoreService.nactiDomacnostVydaje(),
+        FirestoreService.nactiWaxDreamPrijmy(),
+        FirestoreService.nactiWaxDreamVydaje()
       ]);
 
       // Konverze Firestore dat do formátu AsyncStorage
@@ -141,11 +190,32 @@ export const useFirestoreSync = () => {
         firestoreId: vydaj.id
       }));
 
+      const waxdreamPrijmyProStorage = waxdreamPrijmy.map(prijem => ({
+        id: prijem.id,
+        castka: prijem.castka,
+        datum: prijem.datum,
+        popis: prijem.popis,
+        rok: prijem.rok,
+        firestoreId: prijem.id
+      }));
+
+      const waxdreamVydajeProStorage = waxdreamVydaje.map(vydaj => ({
+        id: vydaj.id,
+        castka: vydaj.castka,
+        datum: vydaj.datum,
+        kategorie: vydaj.kategorie,
+        dodavatel: vydaj.dodavatel,
+        rok: vydaj.rok,
+        firestoreId: vydaj.id
+      }));
+
       // Uložení do AsyncStorage
       await Promise.all([
         AsyncStorage.setItem('seznamPrijmuData_v2', JSON.stringify(prijmyProStorage)),
         AsyncStorage.setItem('seznamVydajuData_v1', JSON.stringify(vydajeProStorage)),
-        AsyncStorage.setItem('domacnostVydajeData_v1', JSON.stringify(domacnostProStorage))
+        AsyncStorage.setItem('domacnostVydajeData_v1', JSON.stringify(domacnostProStorage)),
+        AsyncStorage.setItem('waxdream_prijmy', JSON.stringify(waxdreamPrijmyProStorage)),
+        AsyncStorage.setItem('waxdream_vydaje', JSON.stringify(waxdreamVydajeProStorage))
       ]);
 
       setLastSyncTime(new Date());

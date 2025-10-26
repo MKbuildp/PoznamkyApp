@@ -24,7 +24,7 @@ export const useDomacnost = (): UseDomacnostReturn => {
     // Formulář
     castka: '',
     datum: new Date(),
-    kategorie: KategorieDomacnostVydaju.JIDLO,
+    kategorie: undefined,
     ucel: '',
     isDatePickerVisible: false,
     isLoading: false,
@@ -165,6 +165,11 @@ export const useDomacnost = (): UseDomacnostReturn => {
       return;
     }
 
+    if (!state.kategorie) {
+      Alert.alert('Chyba', 'Vyberte kategorii');
+      return;
+    }
+
     // Kontrola účelu pro kategorie "Jiné" a "Pravidelné" (povinné)
     if ((state.kategorie === KategorieDomacnostVydaju.JINE || state.kategorie === KategorieDomacnostVydaju.PRAVIDELNE) && !state.ucel.trim()) {
       Alert.alert('Chyba', `Pro kategorii "${state.kategorie}" je povinný účel`);
@@ -241,6 +246,95 @@ export const useDomacnost = (): UseDomacnostReturn => {
       setState(prev => ({ ...prev, isLoading: false }));
     }
   }, [state.castka, state.datum, state.kategorie, state.ucel, nactiData]);
+
+  /**
+   * @description Handler pro uložení nového záznamu s daty z modálního okna
+   */
+  const handleSubmitWithData = useCallback(async (data: any) => {
+    if (!data.castka || parseFloat(data.castka) <= 0) {
+      Alert.alert('Chyba', 'Zadejte platnou částku');
+      return;
+    }
+
+    if (!data.kategorie) {
+      Alert.alert('Chyba', 'Vyberte kategorii');
+      return;
+    }
+
+    // Kontrola účelu pro kategorie "Jiné" a "Pravidelné" (povinné)
+    if ((data.kategorie === KategorieDomacnostVydaju.JINE || data.kategorie === KategorieDomacnostVydaju.PRAVIDELNE) && !data.ucel?.trim()) {
+      Alert.alert('Chyba', `Pro kategorii "${data.kategorie}" je povinný účel`);
+      return;
+    }
+
+    setState(prev => ({ ...prev, isLoading: true }));
+
+    try {
+      const novyVydaj: DomacnostVydaj = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        castka: parseFloat(data.castka),
+        datum: data.datum.toISOString(),
+        kategorie: data.kategorie,
+        ucel: data.ucel?.trim() || undefined,
+      };
+
+      // Uložení do AsyncStorage (lokální úložiště)
+      const existujiciVydajeString = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
+      const existujiciVydaje: DomacnostVydaj[] = existujiciVydajeString 
+        ? JSON.parse(existujiciVydajeString) 
+        : [];
+
+      const noveVydaje = [...existujiciVydaje, novyVydaj];
+      await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(noveVydaje));
+
+      // Uložení do Firestore (cloud synchronizace)
+      try {
+        const firestoreData = {
+          castka: novyVydaj.castka,
+          datum: novyVydaj.datum,
+          kategorie: novyVydaj.kategorie,
+          ucel: novyVydaj.ucel || ''
+        };
+        
+        const firestoreId = await FirestoreService.ulozDomacnostVydaj(firestoreData);
+        
+        // Označení jako synchronizované v AsyncStorage
+        novyVydaj.firestoreId = firestoreId;
+        const aktualizovaneVydajeData = noveVydaje.map(v => 
+          v.id === novyVydaj.id ? { ...v, firestoreId } : v
+        );
+        await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(aktualizovaneVydajeData));
+      } catch (firestoreError) {
+        console.error('Chyba při ukládání do Firestore:', firestoreError);
+        // Data zůstávají v AsyncStorage i při chybě Firestore
+        Alert.alert('Upozornění', 'Data uložena lokálně, ale nepodařilo se synchronizovat s cloudem');
+      }
+
+      // Reset formuláře
+      setState(prev => ({
+        ...prev,
+        castka: '',
+        datum: new Date(),
+        kategorie: KategorieDomacnostVydaju.JIDLO,
+        ucel: '',
+        isLoading: false,
+      }));
+
+      // Okamžitá aktualizace UI bez čekání na načtení dat
+      const zpracovanaData = zpracujData(noveVydaje);
+      setState(s => ({
+        ...s,
+        ...zpracovanaData,
+        vsechnyVydaje: noveVydaje,
+      }));
+
+      Alert.alert('Úspěch', 'Výdaj byl uložen');
+    } catch (error) {
+      console.error('DOMACNOST ERROR: Chyba při ukládání výdaje:', error);
+      Alert.alert('Chyba', 'Nepodařilo se uložit výdaj');
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, [nactiData]);
 
   const zmenitMesic = useCallback((posun: number) => {
     let novyMesic = vybranyMesic + posun;
@@ -372,6 +466,91 @@ export const useDomacnost = (): UseDomacnostReturn => {
     return date.toLocaleDateString('cs-CZ');
   }, []);
 
+  const editovatVydaj = useCallback(async (editedVydaj: DomacnostVydaj) => {
+    try {
+      // Aktualizace v AsyncStorage
+      const existujiciData = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
+      if (!existujiciData) {
+        throw new Error('Nepodařilo se načíst data pro editaci');
+      }
+
+      const vydajeData: DomacnostVydaj[] = JSON.parse(existujiciData);
+      const aktualizovanaData = vydajeData.map(v => 
+        v.id === editedVydaj.id ? editedVydaj : v
+      );
+
+      await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(aktualizovanaData));
+
+      // Aktualizace v Firestore, pokud má firestoreId
+      if (editedVydaj.firestoreId) {
+        try {
+          const firestoreData = {
+            castka: editedVydaj.castka,
+            datum: editedVydaj.datum,
+            kategorie: editedVydaj.kategorie,
+            ucel: editedVydaj.ucel || ''
+          };
+          
+          await FirestoreService.aktualizujDomacnostVydaj(editedVydaj.firestoreId, firestoreData);
+        } catch (firestoreError) {
+          console.error('Chyba při aktualizaci v Firestore:', firestoreError);
+          Alert.alert('Upozornění', 'Změny uloženy lokálně, ale nepodařilo se synchronizovat s cloudem');
+        }
+      }
+
+      // Okamžitá aktualizace UI
+      const zpracovanaData = zpracujData(aktualizovanaData);
+      setState(s => ({
+        ...s,
+        ...zpracovanaData,
+        vsechnyVydaje: aktualizovanaData,
+      }));
+
+      Alert.alert('Úspěch', 'Výdaj byl úspěšně upraven');
+    } catch (error) {
+      console.error('Chyba při editaci výdaje:', error);
+      throw error;
+    }
+  }, [zpracujData]);
+
+  const smazatVydaj = useCallback(async (vydaj: DomacnostVydaj) => {
+    try {
+      // Smazání z AsyncStorage
+      const existujiciData = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
+      if (!existujiciData) {
+        throw new Error('Nepodařilo se načíst data pro smazání');
+      }
+
+      const vydajeData: DomacnostVydaj[] = JSON.parse(existujiciData);
+      const aktualizovanaData = vydajeData.filter(v => v.id !== vydaj.id);
+
+      await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(aktualizovanaData));
+
+      // Smazání z Firestore, pokud má firestoreId
+      if (vydaj.firestoreId) {
+        try {
+          await FirestoreService.smazDokument(FIRESTORE_COLLECTIONS.DOMACNOST, vydaj.firestoreId);
+        } catch (firestoreError) {
+          console.error('Chyba při mazání z Firestore:', firestoreError);
+          // Pokračujeme i při chybě Firestore
+        }
+      }
+
+      // Okamžitá aktualizace UI
+      const zpracovanaData = zpracujData(aktualizovanaData);
+      setState(s => ({
+        ...s,
+        ...zpracovanaData,
+        vsechnyVydaje: aktualizovanaData,
+      }));
+
+      Alert.alert('Úspěch', 'Výdaj byl úspěšně smazán');
+    } catch (error) {
+      console.error('Chyba při mazání výdaje:', error);
+      throw error;
+    }
+  }, [zpracujData]);
+
   return {
     state,
     mesicniVydaje,
@@ -383,6 +562,7 @@ export const useDomacnost = (): UseDomacnostReturn => {
     handleUcelChange,
     handleDatePickerVisibilityChange,
     handleSubmit,
+    handleSubmitWithData,
     nactiData,
     zmenitMesic,
     vybranyMesic,
@@ -392,5 +572,7 @@ export const useDomacnost = (): UseDomacnostReturn => {
     jeVikend,
     rozdelZaznamyDoSloupcu,
     smazatPosledniVydaj,
+    editovatVydaj,
+    smazatVydaj,
   };
 };

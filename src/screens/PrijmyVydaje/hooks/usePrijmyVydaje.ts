@@ -8,14 +8,17 @@ import { FirestoreService, FIRESTORE_COLLECTIONS } from '../../../services/fires
 const PRIJMY_STORAGE_KEY = 'seznamPrijmuData_v2';
 
 /**
- * @description Hook pro správu logiky obrazovky příjmů (bez výdajů)
+ * @description Hook pro správu logiky obrazovky Koloniál (původně Příjmy)
+ * 
+ * POZNÁMKA: Tento hook slouží pro tab "Koloniál" v aplikaci
+ * Původní název byl "Příjmy", ale uživatel ji označuje jako "Koloniál"
  */
 export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
   const [state, setState] = useState<PrijmyVydajeState>({
     prijmy: {
       castka: '',
       datum: new Date(),
-      kategorie: KategoriePrijmu.TRZBA,
+      kategorie: undefined as any,
       popis: '',
       vybranyRok: new Date().getFullYear(),
       isDatePickerVisible: false,
@@ -184,7 +187,7 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
           ...prev.prijmy,
           castka: '',
           datum: new Date(),
-          kategorie: KategoriePrijmu.TRZBA,
+          kategorie: undefined as any,
           popis: '',
           isLoading: false
         }
@@ -202,6 +205,90 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
       }));
     }
   }, [state.prijmy.castka, state.prijmy.datum, state.prijmy.kategorie, state.prijmy.popis, nactiRocniPrijem, nactiJinePrijmy]);
+
+  /**
+   * @description Handler pro uložení nového příjmu s daty z modálního okna
+   */
+  const prijmyHandleSubmitWithData = useCallback(async (data: any) => {
+    if (!data.castka || isNaN(parseFloat(data.castka))) {
+      Alert.alert('Chyba', 'Zadejte platnou částku');
+      return;
+    }
+
+    // Kontrola popisu pro kategorii "Jiné"
+    if (data.kategorie === KategoriePrijmu.JINE && !data.popis?.trim()) {
+      Alert.alert('Chyba', 'Pro kategorii "Jiné" je povinný popis');
+      return;
+    }
+
+    setState(prev => ({ 
+      ...prev, 
+      prijmy: { ...prev.prijmy, isLoading: true }
+    }));
+
+    try {
+      const novyPrijem: Prijem = {
+        id: Date.now().toString(),
+        castka: parseFloat(data.castka),
+        datum: data.datum.toISOString(),
+        kategorie: data.kategorie,
+        popis: data.kategorie === KategoriePrijmu.JINE ? data.popis : undefined,
+      };
+
+      // Uložení do AsyncStorage (lokální úložiště)
+      const existujiciData = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
+      const prijmyData = existujiciData ? JSON.parse(existujiciData) : [];
+      
+      prijmyData.push(novyPrijem);
+      await AsyncStorage.setItem(PRIJMY_STORAGE_KEY, JSON.stringify(prijmyData));
+
+      // Uložení do Firestore (cloud synchronizace)
+      try {
+        const firestoreData = {
+          castka: novyPrijem.castka,
+          datum: novyPrijem.datum,
+          kategorie: novyPrijem.kategorie,
+          popis: novyPrijem.popis || ''
+        };
+        
+        const firestoreId = await FirestoreService.ulozPrijem(firestoreData);
+        
+        // Označení jako synchronizované v AsyncStorage
+        novyPrijem.firestoreId = firestoreId;
+        const aktualizovanaData = prijmyData.map((p: any) => 
+          p.id === novyPrijem.id ? { ...p, firestoreId } : p
+        );
+        await AsyncStorage.setItem(PRIJMY_STORAGE_KEY, JSON.stringify(aktualizovanaData));
+      } catch (firestoreError) {
+        console.error('Chyba při ukládání do Firestore:', firestoreError);
+        // Data zůstávají v AsyncStorage i při chybě Firestore
+        Alert.alert('Upozornění', 'Data uložena lokálně, ale nepodařilo se synchronizovat s cloudem');
+      }
+
+      setState(prev => ({ 
+        ...prev, 
+        prijmy: {
+          ...prev.prijmy,
+          castka: '',
+          datum: new Date(),
+          kategorie: undefined as any,
+          popis: '',
+          isLoading: false
+        }
+      }));
+
+      Alert.alert('Úspěch', 'Příjem byl úspěšně uložen');
+      await nactiRocniPrijem();
+      await nactiJinePrijmy();
+    } catch (error) {
+      console.error('PRIJMY VYDAJE ERROR: Chyba při ukládání příjmu:', error);
+      Alert.alert('Chyba', 'Nepodařilo se uložit příjem');
+      setState(prev => ({ 
+        ...prev, 
+        prijmy: { ...prev.prijmy, isLoading: false }
+      }));
+    }
+  }, [nactiRocniPrijem, nactiJinePrijmy]);
 
   const prijmyHandleDatePickerVisibilityChange = useCallback((isVisible: boolean) => {
     setState(prev => ({ 
@@ -302,6 +389,7 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
       handleCastkaChange: prijmyHandleCastkaChange,
       handleDatumChange: prijmyHandleDatumChange,
       handleSubmit: prijmyHandleSubmit,
+      handleSubmitWithData: prijmyHandleSubmitWithData,
       handleDatePickerVisibilityChange: prijmyHandleDatePickerVisibilityChange,
       handleKategorieChange: prijmyHandleKategorieChange,
       handlePopisChange: prijmyHandlePopisChange,
@@ -309,6 +397,7 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
     },
     utils: {
       formatujDatum,
+      nactiRocniPrijem,
     },
   };
 };

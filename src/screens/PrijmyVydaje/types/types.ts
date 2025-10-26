@@ -24,7 +24,7 @@ export interface PrijmyVydajeState {
   prijmy: {
     castka: string;
     datum: Date;
-    kategorie: KategoriePrijmu;
+    kategorie: KategoriePrijmu | undefined;
     popis: string;
     vybranyRok: number;
     isDatePickerVisible: boolean;
@@ -39,7 +39,7 @@ export interface PrijmyVydajeState {
 export interface FormularPrijmuProps {
   castka: string;
   datum: Date;
-  kategorie: KategoriePrijmu;
+  kategorie: KategoriePrijmu | undefined;
   popis: string;
   isDatePickerVisible: boolean;
   isLoading: boolean;
@@ -69,5 +69,6 @@ export interface UsePrijmyVydajeReturn {
   };
   utils: {
     formatujDatum: (date: Date) => string;
+    nactiRocniPrijem: () => Promise<void>;
   };
 } 

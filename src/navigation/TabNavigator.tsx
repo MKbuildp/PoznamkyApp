@@ -6,7 +6,7 @@ import { Platform, Dimensions } from 'react-native';
 
 // Import obrazovek
 import { PrehledScreen } from '../screens/Prehled/PrehledScreen';
-import { VydajePrehledScreen } from '../screens/VydajePrehled/VydajePrehledScreen';
+import { WaxDreamScreen } from '../screens/WaxDream/WaxDreamScreen';
 import { PrijmyVydajeScreen } from '../screens/PrijmyVydaje/PrijmyVydajeScreen';
 import PoznamkyScreen from '../screens/Poznamky/PoznamkyScreen';
 
@@ -16,27 +16,33 @@ import { TabParamList, RootStackParamList } from '../types/navigation';
 /**
  * @description Konstanty pro názvy tabů s vysvětlením
  * Poznámka: Názvy tabů neodpovídají zobrazovanému textu v tab baru
+ * 
+ * DŮLEŽITÉ: Tab PRIJMY se zobrazuje jako "Koloniál" - obsahuje funkcionalitu příjmů a výdajů
  */
 const TAB_NAMES = {
-  VYDAJE: 'ZboziTab', // Zobrazuje "Výdaje" v tab baru
-  PRIJMY: 'VydajeTab', // Zobrazuje "Příjmy" v tab baru  
+  WAXDREAM: 'WaxDreamTab', // Zobrazuje "WaxDream" v tab baru
+  PRIJMY: 'VydajeTab', // Zobrazuje "Koloniál" v tab baru (obsahuje příjmy + výdaje)
   PREHLED: 'PrehledTab', // Zobrazuje "Přehled" v tab baru
   DOMACNOST: 'PoznamkyTab' // Zobrazuje "Domácnost" v tab baru
 } as const;
 
 // Stack navigátory pro každý tab
-const ZboziStack = createNativeStackNavigator<RootStackParamList>();
+const WaxDreamStack = createNativeStackNavigator<RootStackParamList>();
 const VydajeStack = createNativeStackNavigator<RootStackParamList>();
 const PrehledStack = createNativeStackNavigator<RootStackParamList>();
 const PoznamkyStack = createNativeStackNavigator<RootStackParamList>();
 
 // Komponenty pro jednotlivé záložky
-const ZboziStackScreen = () => (
-  <ZboziStack.Navigator screenOptions={{ headerShown: false }}>
-    <ZboziStack.Screen name="VydajePrehled" component={VydajePrehledScreen} />
-  </ZboziStack.Navigator>
+const WaxDreamStackScreen = () => (
+  <WaxDreamStack.Navigator screenOptions={{ headerShown: false }}>
+    <WaxDreamStack.Screen name="WaxDream" component={WaxDreamScreen} />
+  </WaxDreamStack.Navigator>
 );
 
+/**
+ * @description Stack navigátor pro tab Koloniál (původně Příjmy)
+ * Obsahuje PrijmyVydajeScreen s funkcionalitou příjmů a výdajů
+ */
 const VydajeStackScreen = () => (
   <VydajeStack.Navigator screenOptions={{ headerShown: false }}>
     <VydajeStack.Screen name="PrijmyVydaje" component={PrijmyVydajeScreen} />
@@ -77,8 +83,8 @@ export const TabNavigator = () => {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: string = '';
 
-          if (route.name === TAB_NAMES.VYDAJE) {
-            iconName = focused ? 'receipt' : 'receipt-outline';
+          if (route.name === TAB_NAMES.WAXDREAM) {
+            iconName = focused ? 'flame' : 'flame-outline';
           } else if (route.name === TAB_NAMES.PRIJMY) {
             iconName = focused ? 'cash' : 'cash-outline';
           } else if (route.name === TAB_NAMES.PREHLED) {
@@ -105,19 +111,20 @@ export const TabNavigator = () => {
       })}
     >
       <Tab.Screen 
-        name={TAB_NAMES.VYDAJE} 
-        component={ZboziStackScreen} 
+        name={TAB_NAMES.WAXDREAM} 
+        component={WaxDreamStackScreen} 
         options={{ 
-          title: 'Výdaje',
-          tabBarLabel: 'Výdaje'
+          title: 'WaxDream',
+          tabBarLabel: 'WaxDream'
         }} 
       />
+      {/* Tab Koloniál - obsahuje funkcionalitu příjmů a výdajů */}
       <Tab.Screen 
         name={TAB_NAMES.PRIJMY} 
         component={VydajeStackScreen} 
         options={{ 
-          title: 'Příjmy',
-          tabBarLabel: 'Příjmy'
+          title: 'Koloniál',
+          tabBarLabel: 'Koloniál'
         }} 
       />
       <Tab.Screen 
