@@ -17,6 +17,7 @@ export interface Prijem {
   datum: string; // Ukládáme jako ISO string např. YYYY-MM-DDTHH:mm:ss.sssZ
   kategorie: KategoriePrijmu;
   popis?: string; // Volitelný popis pro kategorii "Jiné"
+  firestoreId?: string; // ID dokumentu v Firestore pro synchronizaci
 }
 
 /**

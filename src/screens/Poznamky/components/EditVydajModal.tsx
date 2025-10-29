@@ -56,7 +56,7 @@ export const EditVydajModal: React.FC<EditVydajModalProps> = ({
     setCastka(finalText);
   };
 
-  const handleDatumChange = (event: any, selectedDate?: Date) => {
+  const handleDatumChange = (selectedDate: Date) => {
     setIsDatePickerVisible(false);
     if (selectedDate) {
       setDatum(selectedDate);

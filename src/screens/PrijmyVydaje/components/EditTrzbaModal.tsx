@@ -1,5 +1,5 @@
 /** EditTrzbaModal - Modální okno pro editaci tržeb */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   View,
@@ -35,13 +35,22 @@ export const EditTrzbaModal: React.FC<EditTrzbaModalProps> = ({
   const [datum, setDatum] = useState(new Date());
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const prevVisibleRef = useRef(false);
 
   // Naplnění formuláře při otevření modálního okna
   useEffect(() => {
-    if (trzba && visible) {
+    // Resetuj formulář pouze když se modální okno právě otevřelo (visible změnil z false na true)
+    if (trzba && visible && !prevVisibleRef.current) {
       setCastka(trzba.castka.toString());
-      setDatum(new Date(trzba.datum));
+      // Zajištění správného parsování data
+      const datumValue = trzba.datum ? new Date(trzba.datum) : new Date();
+      if (!isNaN(datumValue.getTime())) {
+        setDatum(datumValue);
+      } else {
+        setDatum(new Date());
+      }
     }
+    prevVisibleRef.current = visible;
   }, [trzba, visible]);
 
   const handleCastkaChange = (text: string) => {
@@ -52,7 +61,7 @@ export const EditTrzbaModal: React.FC<EditTrzbaModalProps> = ({
     setCastka(finalText);
   };
 
-  const handleDatumChange = (event: any, selectedDate?: Date) => {
+  const handleDatumChange = (selectedDate: Date) => {
     setIsDatePickerVisible(false);
     if (selectedDate) {
       setDatum(selectedDate);

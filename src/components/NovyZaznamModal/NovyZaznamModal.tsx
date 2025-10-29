@@ -8,6 +8,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 
@@ -120,6 +125,9 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
                 value={popis}
                 onChangeText={setPopis}
                 placeholder="Zadejte popis příjmu"
+                returnKeyType="done"
+                blurOnSubmit={true}
+                onSubmitEditing={Keyboard.dismiss}
               />
             </View>
           ) : (
@@ -168,6 +176,9 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
                   value={dodavatel}
                   onChangeText={setDodavatel}
                   placeholder="Zadejte dodavatele"
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  onSubmitEditing={Keyboard.dismiss}
                 />
               </View>
             </>
@@ -224,6 +235,9 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
                     value={popisPrijmu}
                     onChangeText={setPopisPrijmu}
                     placeholder="Zadejte popis příjmu"
+                    returnKeyType="done"
+                    blurOnSubmit={true}
+                    onSubmitEditing={Keyboard.dismiss}
                   />
                 </View>
               )}
@@ -274,6 +288,9 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
                   value={dodavatelVydaje}
                   onChangeText={setDodavatelVydaje}
                   placeholder="Zadejte dodavatele"
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  onSubmitEditing={Keyboard.dismiss}
                 />
               </View>
             </>
@@ -291,6 +308,9 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
                 value={ucel}
                 onChangeText={setUcel}
                 placeholder="Zadejte popis příjmu"
+                returnKeyType="done"
+                blurOnSubmit={true}
+                onSubmitEditing={Keyboard.dismiss}
               />
             </View>
           ) : (
@@ -355,6 +375,9 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
                   value={ucel}
                   onChangeText={setUcel}
                   placeholder="Zadejte účel"
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  onSubmitEditing={Keyboard.dismiss}
                 />
               </View>
             </>
@@ -371,105 +394,144 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          {/* Hlavička */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Nový záznam</Text>
-            <View style={styles.headerSpacer} />
-          </View>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlayInner}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalContainer}>
+                {/* Hlavička */}
+                <View style={styles.header}>
+                  <TouchableOpacity 
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      onClose();
+                    }} 
+                    style={styles.closeButton}
+                  >
+                    <Text style={styles.closeButtonText}>✕</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.headerTitle}>Nový záznam</Text>
+                  <View style={styles.headerSpacer} />
+                </View>
 
-          {/* Obsah */}
-          <View style={styles.content}>
-            {/* Přepínač Příjem/Výdaj - vždy nahoře */}
-            <View style={styles.tabContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.tabButton, 
-                  aktivniTab === 'prijem' && styles.tabButtonPrijemActive
-                ]}
-                onPress={() => setAktivniTab('prijem')}
-              >
-                <Text style={[
-                  styles.tabButtonText, 
-                  aktivniTab === 'prijem' && styles.tabButtonTextPrijemActive
-                ]}>
-                  Příjem
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.tabButton, 
-                  aktivniTab === 'vydaj' && styles.tabButtonVydajActive
-                ]}
-                onPress={() => setAktivniTab('vydaj')}
-              >
-                <Text style={[
-                  styles.tabButtonText, 
-                  aktivniTab === 'vydaj' && styles.tabButtonTextVydajActive
-                ]}>
-                  Výdaj
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Datum a Částka - vždy pod přepínačem */}
-            <View style={styles.firstRow}>
-              {/* Datum */}
-              <View style={styles.halfInputContainer}>
-                <Text style={styles.label}>Datum</Text>
-                <TouchableOpacity 
-                  style={styles.dateButton}
-                  onPress={() => setIsDatePickerVisible(true)}
+                {/* Obsah - ScrollView pro iOS */}
+                <ScrollView
+                  style={styles.scrollView}
+                  contentContainerStyle={styles.scrollViewContent}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
                 >
-                  <Text style={styles.dateButtonText}>
-                    {datum.toLocaleDateString('cs-CZ')}
-                  </Text>
-                </TouchableOpacity>
+                  {/* Přepínač Příjem/Výdaj - vždy nahoře */}
+                  <View style={styles.tabContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.tabButton, 
+                        aktivniTab === 'prijem' && styles.tabButtonPrijemActive
+                      ]}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setAktivniTab('prijem');
+                      }}
+                    >
+                      <Text style={[
+                        styles.tabButtonText, 
+                        aktivniTab === 'prijem' && styles.tabButtonTextPrijemActive
+                      ]}>
+                        Příjem
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.tabButton, 
+                        aktivniTab === 'vydaj' && styles.tabButtonVydajActive
+                      ]}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setAktivniTab('vydaj');
+                      }}
+                    >
+                      <Text style={[
+                        styles.tabButtonText, 
+                        aktivniTab === 'vydaj' && styles.tabButtonTextVydajActive
+                      ]}>
+                        Výdaj
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Datum a Částka - vždy pod přepínačem */}
+                  <View style={styles.firstRow}>
+                    {/* Datum */}
+                    <View style={styles.halfInputContainer}>
+                      <Text style={styles.label}>Datum</Text>
+                      <TouchableOpacity 
+                        style={styles.dateButton}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setIsDatePickerVisible(true);
+                        }}
+                      >
+                        <Text style={styles.dateButtonText}>
+                          {datum.toLocaleDateString('cs-CZ')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Částka */}
+                    <View style={styles.halfInputContainer}>
+                      <Text style={styles.label}>Částka</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={castka}
+                        onChangeText={setCastka}
+                        placeholder="0"
+                        keyboardType="numeric"
+                        returnKeyType="done"
+                        blurOnSubmit={true}
+                        onSubmitEditing={Keyboard.dismiss}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Specifický obsah podle typu */}
+                  {renderContent()}
+
+                  {/* Tlačítka */}
+                  <View style={styles.buttonContainer}>
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        onClose();
+                      }}
+                    >
+                      <Text style={styles.cancelButtonText}>Zrušit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
+                      onPress={async () => {
+                        Keyboard.dismiss();
+                        await handleSubmit();
+                      }}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <ActivityIndicator size="small" color="white" />
+                      ) : (
+                        <Text style={styles.saveButtonText}>Uložit</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
               </View>
-
-              {/* Částka */}
-              <View style={styles.halfInputContainer}>
-                <Text style={styles.label}>Částka</Text>
-                <TextInput
-                  style={styles.input}
-                  value={castka}
-                  onChangeText={setCastka}
-                  placeholder="0"
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
-
-            {/* Specifický obsah podle typu */}
-            {renderContent()}
-
-            {/* Tlačítka */}
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={onClose}
-              >
-                <Text style={styles.cancelButtonText}>Zrušit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <Text style={styles.saveButtonText}>Uložit</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
-      </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
 
       {/* Date Picker */}
       <DateTimePickerModal
@@ -488,6 +550,9 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
+  },
+  modalOverlayInner: {
+    flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -497,7 +562,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: '90%',
     maxWidth: 400,
+    maxHeight: '90%',
     elevation: 5,
+  },
+  scrollView: {
+    flexGrow: 0,
+  },
+  scrollViewContent: {
+    padding: 16,
   },
   header: {
     flexDirection: 'row',
@@ -521,9 +593,6 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 26,
-  },
-  content: {
-    padding: 16,
   },
   firstRow: {
     flexDirection: 'row',

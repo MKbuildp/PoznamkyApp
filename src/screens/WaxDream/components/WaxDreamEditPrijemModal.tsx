@@ -51,7 +51,7 @@ export const WaxDreamEditPrijemModal: React.FC<WaxDreamEditPrijemModalProps> = (
     setCastka(finalText);
   };
 
-  const handleDatumChange = (event: any, selectedDate?: Date) => {
+  const handleDatumChange = (selectedDate: Date) => {
     setIsDatePickerVisible(false);
     if (selectedDate) {
       setDatum(selectedDate);

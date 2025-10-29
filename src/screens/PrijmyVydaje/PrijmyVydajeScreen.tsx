@@ -174,38 +174,49 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
   /**
    * @description Otevření modálního okna pro editaci tržby
    */
-  const handleEditTrzba = (zaznam: any) => {
-    // Najdeme původní tržbu v denniZaznamy podle data
-    const trzba = denniZaznamy.find(d => d.datum === zaznam.datum);
-    if (trzba && trzba.castka > 0) {
+  const handleEditTrzba = async (zaznam: any) => {
+    try {
+      // Najdeme původní tržbu v denniZaznamy podle data
+      const trzba = denniZaznamy.find(d => d.datum === zaznam.datum);
+      if (!trzba || trzba.castka <= 0) {
+        Alert.alert('Info', 'Pro tento den není žádná tržba k editaci');
+        return;
+      }
+
       // Najdeme původní příjem v AsyncStorage podle data a částky
-      AsyncStorage.getItem('seznamPrijmuData_v2').then(jsonValue => {
-        if (jsonValue) {
-          const vsechnyPrijmy = JSON.parse(jsonValue);
-          const datumPrijmu = new Date(zaznam.datum);
-          
-          // Najdeme příjem kategorie Tržba pro tento den
-          const trzbaPrijem = vsechnyPrijmy.find((p: any) => {
-            const datumP = new Date(p.datum);
-            return p.kategorie === 'Tržba' && 
-                   datumP.getFullYear() === datumPrijmu.getFullYear() &&
-                   datumP.getMonth() === datumPrijmu.getMonth() &&
-                   datumP.getDate() === datumPrijmu.getDate();
-          });
-          
-          if (trzbaPrijem) {
-            setSelectedTrzba(trzbaPrijem);
-            setEditTrzbaModalVisible(true);
-          } else {
-            Alert.alert('Chyba', 'Tržba nebyla nalezena');
-          }
-        }
-      }).catch(error => {
-        console.error('Chyba při hledání tržby:', error);
-        Alert.alert('Chyba', 'Nepodařilo se načíst tržbu');
+      const jsonValue = await AsyncStorage.getItem('seznamPrijmuData_v2');
+      if (!jsonValue) {
+        Alert.alert('Chyba', 'Nepodařilo se načíst tržby');
+        return;
+      }
+
+      const vsechnyPrijmy = JSON.parse(jsonValue);
+      const datumPrijmu = new Date(zaznam.datum);
+      
+      // Najdeme příjem kategorie Tržba pro tento den podle data A částky (pro přesnost)
+      const trzbaPrijem = vsechnyPrijmy.find((p: any) => {
+        const datumP = new Date(p.datum);
+        return p.kategorie === 'Tržba' && 
+               datumP.getFullYear() === datumPrijmu.getFullYear() &&
+               datumP.getMonth() === datumPrijmu.getMonth() &&
+               datumP.getDate() === datumPrijmu.getDate() &&
+               Math.abs(p.castka - trzba.castka) < 0.01; // Porovnání částky s tolerancí
       });
-    } else {
-      Alert.alert('Info', 'Pro tento den není žádná tržba k editaci');
+      
+      if (trzbaPrijem) {
+        // Ověříme, že máme všechny potřebné vlastnosti
+        if (!trzbaPrijem.id) {
+          Alert.alert('Chyba', 'Tržba nemá ID - nelze editovat');
+          return;
+        }
+        setSelectedTrzba(trzbaPrijem);
+        setEditTrzbaModalVisible(true);
+      } else {
+        Alert.alert('Chyba', 'Tržba nebyla nalezena v databázi');
+      }
+    } catch (error) {
+      console.error('Chyba při hledání tržby:', error);
+      Alert.alert('Chyba', 'Nepodařilo se načíst tržbu');
     }
   };
 
@@ -223,6 +234,9 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
   const handleSaveEditedTrzba = async (editedTrzba: any) => {
     try {
       await editovatTrzbu(editedTrzba);
+      // Aktualizace dat po úspěšném uložení
+      await nactiData();
+      await nactiJinePrijmy();
     } catch (error) {
       console.error('Chyba při ukládání editované tržby:', error);
       throw error;
