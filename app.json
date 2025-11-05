@@ -2,7 +2,7 @@
   "expo": {
     "name": "PoznamkyApp",
     "slug": "PoznamkyApp",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/poznamky-icon.png",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
       "supportsTablet": true,
       "icon": "./assets/poznamky-icon.png",
       "bundleIdentifier": "com.mkbuild.PoznamkyApp",
-      "buildNumber": "7",
+      "buildNumber": "8",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -26,7 +26,7 @@
         "foregroundImage": "./assets/poznamky-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "versionCode": 7,
+      "versionCode": 8,
       "edgeToEdgeEnabled": true
     },
     "web": {
