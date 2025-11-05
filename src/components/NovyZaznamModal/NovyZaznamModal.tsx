@@ -1,5 +1,5 @@
 /** NovyZaznamModal - Modální okno pro přidání nového záznamu */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -52,6 +52,13 @@ export const NovyZaznamModal: React.FC<NovyZaznamModalProps> = ({
   // Domácnost specifické stavy
   const [kategorieDomacnost, setKategorieDomacnost] = useState<'JIDLO' | 'JINE' | 'PRAVIDELNE' | 'PRIJEM' | undefined>(undefined);
   const [ucel, setUcel] = useState('');
+
+  // Pro typ 'domacnost' nastavit výchozí tab na Výdaj při otevření modalu
+  useEffect(() => {
+    if (visible && type === 'domacnost') {
+      setAktivniTab('vydaj');
+    }
+  }, [visible, type]);
 
   const handleSubmit = async () => {
     if (!castka || parseFloat(castka) <= 0) {

@@ -178,6 +178,7 @@ const TAB_NAMES = {
 - **Účel**: Univerzální modální okno pro přidání nových záznamů na všech třech obrazovkách
 - **Funkce**:
   - **Přepínač Příjem/Výdaj**: Vždy nahoře s barevným rozlišením (zeleně/červeně)
+  - **Výchozí nastavení**: Pro typ 'domacnost' se automaticky nastaví tab "Výdaj" při otevření modalu
   - **Datum a Částka**: Vždy pod přepínačem vedle sebe
   - **Specifické pole**: Podle typu obrazovky a vybraného tabu
   - **Kategorie**: S vlastními barvami podle záznamů (modrá, oranžová, zelená, fialová)
@@ -188,7 +189,8 @@ const TAB_NAMES = {
 - **Typy obrazovek**:
   - **WaxDream**: Příjem (Popis), Výdaj (Materiál/Provoz + Dodavatel)
   - **Koloniál**: Příjem (Tržba/Jiné + Popis), Výdaj (Zboží/Provoz + Dodavatel)
-  - **Domácnost**: Příjem (Popis), Výdaj (Jídlo/Jiné/Pravidelné + Účel)
+  - **Domácnost**: Příjem (Popis), Výdaj (Jídlo/Jiné/Pravidelné + Účel) - **výchozí tab: Výdaj**
+    - **POZNÁMKA**: `NovyZaznamModal` posílá stringy ('JIDLO', 'JINE', 'PRAVIDELNE', 'PRIJEM'), které se automaticky převádějí na enum hodnoty ("Jídlo", "Jiné", "Pravidelné", "Příjem") v `handleSubmitWithData` funkci v `useDomacnost.ts`
 - **Design**: Stejný styl jako edit modály s transparentním overlayem
 - **Barvy kategorií**: Stejné jako v záznamech pro vizuální konzistenci
 
@@ -403,6 +405,32 @@ npm run clean
 ## 8. BUILD_FAILURE_HISTORY
 
 ### 8.1 Nedávné změny
+- **2024-12-19**: **OPRAVA PŘIŘAZOVÁNÍ KATEGORIÍ V DOMÁCNOSTI** - Oprava problému s nesprávným zobrazením kategorií a částek
+  - **Problém**: Při vytváření nových záznamů se kategorie nepřiřazovaly správně - všechny záznamy měly oranžovou barvu jako "Jiné"
+  - **Příčina**: `NovyZaznamModal` posílal stringy ('JIDLO', 'JINE', 'PRAVIDELNE', 'PRIJEM'), ale enum `KategorieDomacnostVydaju` má hodnoty ("Jídlo", "Jiné", "Pravidelné", "Příjem")
+  - **Důsledek**: V celkovém přehledu se zobrazovaly správně pouze částky pro kategorii Jídlo, zbylé kategorie (Jiné, Pravidelné) zobrazovaly nulu i když byly záznamy
+  - **Řešení**: 
+    - Přidána funkce `mapKategorieStringToEnum` v `useDomacnost.ts` pro převod stringů na enum hodnoty
+    - Upravena funkce `handleSubmitWithData` - převádí kategorie před uložením
+    - Přidána funkce `normalizujVydaje` pro normalizaci starých záznamů při načítání z AsyncStorage/Firestore
+    - Upravena funkce `nactiData` - automaticky normalizuje staré záznamy a aktualizuje je v AsyncStorage i Firestore
+  - **Implementace**:
+    - `useDomacnost.ts`: Přidána `mapKategorieStringToEnum` a `normalizujVydaje` funkce
+    - `handleSubmitWithData`: Převod kategorií před uložením nového záznamu
+    - `nactiData`: Automatická normalizace při načtení dat
+  - **Výsledek**: 
+    - Nové záznamy se ukládají se správnými enum hodnotami
+    - Staré záznamy se automaticky převedou při načtení
+    - V celkovém přehledu se zobrazují správné částky pro všechny kategorie (Jídlo, Jiné, Pravidelné)
+    - Barvy kategorií se zobrazují správně (modrá pro Jídlo, oranžová pro Jiné, fialová pro Pravidelné, zelená pro Příjem)
+    - Data v AsyncStorage a Firestore se automaticky aktualizují na správný formát
+
+- **2024-12-19**: **VÝCHOZÍ NASTAVENÍ MODÁLNÍHO OKNA DOMÁCNOST** - Automatické nastavení tabu Výdaj
+  - **NovyZaznamModal**: Přidán useEffect pro automatické nastavení aktivního tabu na "Výdaj" při otevření modalu pro typ 'domacnost'
+  - **Zlepšení UX**: Uživatel nemusí ručně přepínat na tab Výdaj, který je nejčastěji používaný
+  - **Implementace**: useEffect sleduje změny `visible` a `type` props a nastaví `aktivniTab` na 'vydaj' pro typ 'domacnost'
+  - **Výsledek**: Při otevření modálního okna "Nový záznam" na obrazovce Domácnost se automaticky zobrazí tab Výdaj místo Příjem
+
 - **2024-12-19**: **UNIFORMNÍ DESIGN ROZKLIKÁVACÍCH TLAČÍTEK** - Sjednocení všech rozklikávacích hlaviček na všech obrazovkách
   - **NovyZaznamButton rozšíření**: Přidány props `isCollapsible`, `isExpanded`, `noMargin` pro rozklikávací funkcionalitu
   - **Dynamická šipka**: Automatické přepínání mezi ▶ (sbalené) a ▼ (rozbalené) podle stavu

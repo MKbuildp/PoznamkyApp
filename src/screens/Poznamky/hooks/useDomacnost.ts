@@ -39,6 +39,29 @@ export const useDomacnost = (): UseDomacnostReturn => {
   // Stav pro seznam výdajů v měsíci
   const [mesicniVydaje, setMesicniVydaje] = useState<DomacnostVydaj[]>([]);
 
+  /**
+   * @description Pomocná funkce pro převod stringu z modálního okna na enum hodnotu
+   */
+  const mapKategorieStringToEnum = (kategorieString: string): KategorieDomacnostVydaju => {
+    switch (kategorieString) {
+      case 'JIDLO':
+        return KategorieDomacnostVydaju.JIDLO;
+      case 'JINE':
+        return KategorieDomacnostVydaju.JINE;
+      case 'PRAVIDELNE':
+        return KategorieDomacnostVydaju.PRAVIDELNE;
+      case 'PRIJEM':
+        return KategorieDomacnostVydaju.PRIJEM;
+      default:
+        // Pokud už je to enum hodnota, vrátíme ji zpět
+        if (Object.values(KategorieDomacnostVydaju).includes(kategorieString as KategorieDomacnostVydaju)) {
+          return kategorieString as KategorieDomacnostVydaju;
+        }
+        // Fallback na "Jiné"
+        return KategorieDomacnostVydaju.JINE;
+    }
+  };
+
   const formatujCastku = useCallback((castka: number): string => {
     return `${Math.round(castka).toLocaleString('cs-CZ')} Kč`;
   }, []);
@@ -93,25 +116,71 @@ export const useDomacnost = (): UseDomacnostReturn => {
     };
   }, [vybranyMesic, vybranyRok]);
 
+  /**
+   * @description Normalizace záznamů - převod starých string hodnot na enum hodnoty
+   */
+  const normalizujVydaje = useCallback((vydaje: DomacnostVydaj[]): DomacnostVydaj[] => {
+    return vydaje.map(vydaj => {
+      // Pokud je kategorie už enum hodnota, necháme ji beze změny
+      if (Object.values(KategorieDomacnostVydaju).includes(vydaj.kategorie as KategorieDomacnostVydaju)) {
+        return vydaj;
+      }
+      // Převod starého stringu na enum hodnotu
+      return {
+        ...vydaj,
+        kategorie: mapKategorieStringToEnum(vydaj.kategorie as string)
+      };
+    });
+  }, []);
+
   const nactiData = useCallback(async () => {
     setState(s => ({ ...s, nacitaSe: true }));
     try {
       const jsonValue = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
       const nacteneVydaje: DomacnostVydaj[] = jsonValue != null ? JSON.parse(jsonValue) : [];
       
-      const zpracovanaData = zpracujData(nacteneVydaje);
+      // Normalizace záznamů - převod starých string hodnot na enum hodnoty
+      const normalizovaneVydaje = normalizujVydaje(nacteneVydaje);
+      
+      // Pokud se některé záznamy změnily, aktualizujeme AsyncStorage
+      const byloTrebaNormalizovat = nacteneVydaje.some((v, index) => 
+        v.kategorie !== normalizovaneVydaje[index].kategorie
+      );
+      
+      if (byloTrebaNormalizovat) {
+        await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(normalizovaneVydaje));
+        // Aktualizace v Firestore, pokud mají firestoreId
+        for (const vydaj of normalizovaneVydaje) {
+          if (vydaj.firestoreId) {
+            try {
+              const firestoreData = {
+                castka: vydaj.castka,
+                datum: vydaj.datum,
+                kategorie: vydaj.kategorie,
+                ucel: vydaj.ucel || ''
+              };
+              await FirestoreService.aktualizujDomacnostVydaj(vydaj.firestoreId, firestoreData);
+            } catch (firestoreError) {
+              console.error('Chyba při aktualizaci kategorie v Firestore:', firestoreError);
+              // Pokračujeme i při chybě Firestore
+            }
+          }
+        }
+      }
+      
+      const zpracovanaData = zpracujData(normalizovaneVydaje);
       
       setState(s => ({
         ...s,
         ...zpracovanaData,
-        vsechnyVydaje: nacteneVydaje,
+        vsechnyVydaje: normalizovaneVydaje,
         nacitaSe: false,
       }));
     } catch (e) {
       console.error('Nepodařilo se načíst domácí výdaje z AsyncStorage:', e);
       setState(s => ({ ...s, nacitaSe: false }));
     }
-  }, [zpracujData]);
+  }, [zpracujData, normalizujVydaje]);
 
   // Inicializační načtení dat
   useEffect(() => {
@@ -261,9 +330,12 @@ export const useDomacnost = (): UseDomacnostReturn => {
       return;
     }
 
+    // Převod stringu z modálního okna na enum hodnotu
+    const kategorieEnum = mapKategorieStringToEnum(data.kategorie);
+
     // Kontrola účelu pro kategorie "Jiné" a "Pravidelné" (povinné)
-    if ((data.kategorie === KategorieDomacnostVydaju.JINE || data.kategorie === KategorieDomacnostVydaju.PRAVIDELNE) && !data.ucel?.trim()) {
-      Alert.alert('Chyba', `Pro kategorii "${data.kategorie}" je povinný účel`);
+    if ((kategorieEnum === KategorieDomacnostVydaju.JINE || kategorieEnum === KategorieDomacnostVydaju.PRAVIDELNE) && !data.ucel?.trim()) {
+      Alert.alert('Chyba', `Pro kategorii "${kategorieEnum}" je povinný účel`);
       return;
     }
 
@@ -274,7 +346,7 @@ export const useDomacnost = (): UseDomacnostReturn => {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         castka: parseFloat(data.castka),
         datum: data.datum.toISOString(),
-        kategorie: data.kategorie,
+        kategorie: kategorieEnum,
         ucel: data.ucel?.trim() || undefined,
       };
 
