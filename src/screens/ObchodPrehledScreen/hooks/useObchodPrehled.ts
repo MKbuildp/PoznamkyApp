@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FirestoreService, FIRESTORE_COLLECTIONS } from '../../../services/firestoreService';
+import { useFirestoreRealtime } from '../../../hooks/useFirestoreRealtime';
+import { FirestoreService, FIRESTORE_COLLECTIONS, FirestorePrijem, FirestoreVydaj } from '../../../services/firestoreService';
 import { 
   Prijem, 
   KategoriePrijmu,
@@ -9,9 +9,6 @@ import {
   UseObchodPrehledReturn, 
   DenniZaznamObchodu 
 } from '../types/types';
-
-const ASYNC_STORAGE_KEY = 'seznamPrijmuData_v2'; // Stejný klíč jako v usePrijmy
-const VYDAJE_STORAGE_KEY = 'seznamVydajuData_v1'; // Klíč pro výdaje
 
 // Typ pro výdaj
 interface Vydaj {
@@ -23,22 +20,94 @@ interface Vydaj {
 }
 
 /**
- * @description Hook pro logiku obrazovky ObchodPrehledScreen.
+ * @description Transformace Firestore dat na lokální typ pro příjmy
+ */
+const transformPrijem = (doc: any): Prijem => {
+  return {
+    id: doc.id,
+    castka: doc.castka,
+    datum: doc.datum,
+    kategorie: doc.kategorie as KategoriePrijmu,
+    popis: doc.popis || undefined,
+    firestoreId: doc.id
+  };
+};
+
+/**
+ * @description Transformace Firestore dat na lokální typ pro výdaje
+ */
+const transformVydaj = (doc: any): Vydaj => {
+  return {
+    id: doc.id,
+    castka: doc.castka,
+    datum: doc.datum,
+    kategorie: doc.kategorie as 'ZBOZI' | 'PROVOZ',
+    dodavatel: doc.dodavatel
+  };
+};
+
+/**
+ * @description Hook pro logiku obrazovky ObchodPrehledScreen s real-time Firebase synchronizací.
  */
 export const useObchodPrehled = (
   vybranyMesic: number = new Date().getMonth(),
   vybranyRok: number = new Date().getFullYear()
 ): UseObchodPrehledReturn => {
-  const [stav, setStav] = useState<ObchodPrehledState>({
-    denniZaznamy: [],
-    mesicniPrijemObchod: 0,
-    nacitaSe: true,
-    vsechnyPrijmy: [],
+  // Real-time synchronizace příjmů z Firestore
+  const { 
+    data: firestorePrijmy, 
+    loading: prijmyNacitaSe, 
+    error: prijmyError 
+  } = useFirestoreRealtime<FirestorePrijem>({
+    collectionName: FIRESTORE_COLLECTIONS.PRIJMY,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: transformPrijem
   });
 
-  // Stav pro jiné příjmy a měsíční výdaje
-  const [jinePrijmy, setJinePrijmy] = useState<Prijem[]>([]);
-  const [mesicniVydaje, setMesicniVydaje] = useState<number>(0);
+  // Real-time synchronizace výdajů z Firestore
+  const { 
+    data: firestoreVydaje, 
+    loading: vydajeNacitaSe, 
+    error: vydajeError 
+  } = useFirestoreRealtime<FirestoreVydaj>({
+    collectionName: FIRESTORE_COLLECTIONS.VYDAJE,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: transformVydaj
+  });
+
+  // Transformace na lokální typy
+  const vsechnyPrijmy: Prijem[] = useMemo(() => {
+    return firestorePrijmy.map(p => ({
+      id: p.id || '',
+      castka: p.castka,
+      datum: p.datum,
+      kategorie: p.kategorie,
+      popis: p.popis,
+      firestoreId: p.id
+    }));
+  }, [firestorePrijmy]);
+
+  const vsechnyVydaje: Vydaj[] = useMemo(() => {
+    return firestoreVydaje.map(v => ({
+      id: v.id || '',
+      castka: v.castka,
+      datum: v.datum,
+      kategorie: v.kategorie as 'ZBOZI' | 'PROVOZ',
+      dodavatel: v.dodavatel
+    }));
+  }, [firestoreVydaje]);
+
+  const nacitaSe = prijmyNacitaSe || vydajeNacitaSe;
+
+  // Error handling
+  if (prijmyError) {
+    console.error('Firestore error v useObchodPrehled (příjmy):', prijmyError);
+  }
+  if (vydajeError) {
+    console.error('Firestore error v useObchodPrehled (výdaje):', vydajeError);
+  }
 
   const formatujCastku = useCallback((castka: number): string => {
     return `${Math.round(castka).toLocaleString('cs-CZ')} Kč`;
@@ -91,182 +160,146 @@ export const useObchodPrehled = (
     };
   }, [vybranyMesic, vybranyRok]);
 
-  const nactiData = useCallback(async () => {
-    setStav(s => ({ ...s, nacitaSe: true }));
-    try {
-      const jsonValue = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
-      const nactenePrijmy: Prijem[] = jsonValue != null ? JSON.parse(jsonValue) : [];
-      
-      const zpracovanaData = zpracujData(nactenePrijmy);
-      
-      setStav(s => ({
-        ...s,
-        ...zpracovanaData,
-        vsechnyPrijmy: nactenePrijmy,
-        nacitaSe: false,
-      }));
-    } catch (e) {
-      console.error('Nepodařilo se načíst příjmy z AsyncStorage v useObchodPrehled:', e);
-      setStav(s => ({ ...s, nacitaSe: false }));
-    }
-  }, [zpracujData]);
+  // Zpracování dat pro UI při změně dat z real-time listeneru
+  const zpracovanaData = useMemo(() => {
+    return zpracujData(vsechnyPrijmy);
+  }, [vsechnyPrijmy, zpracujData]);
 
-  // Načtení jiných příjmů pro vybraný měsíc
-  const nactiJinePrijmy = useCallback(async () => {
-    try {
-      const jsonValue = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
-      if (jsonValue) {
-        const vsechnyPrijmy: Prijem[] = JSON.parse(jsonValue);
-        const jinePrijmyData = vsechnyPrijmy
-          .filter(prijem => prijem.kategorie === KategoriePrijmu.JINE)
-          .filter(prijem => {
-            const datumPrijmu = new Date(prijem.datum);
-            return (
-              datumPrijmu.getFullYear() === vybranyRok &&
-              datumPrijmu.getMonth() === vybranyMesic
-            );
-          });
-        setJinePrijmy(jinePrijmyData);
-      }
-    } catch (error) {
-      console.error('Chyba při načítání jiných příjmů:', error);
-    }
-  }, [vybranyMesic, vybranyRok]);
+  // Filtrování jiných příjmů pro vybraný měsíc
+  const jinePrijmy = useMemo(() => {
+    return vsechnyPrijmy
+      .filter(prijem => prijem.kategorie === KategoriePrijmu.JINE)
+      .filter(prijem => {
+        const datumPrijmu = new Date(prijem.datum);
+        return (
+          datumPrijmu.getFullYear() === vybranyRok &&
+          datumPrijmu.getMonth() === vybranyMesic
+        );
+      });
+  }, [vsechnyPrijmy, vybranyMesic, vybranyRok]);
 
-  // Načtení měsíčních výdajů (pouze kategorie PROVOZ)
-  const nactiMesicniVydaje = useCallback(async () => {
-    try {
-      const jsonValue = await AsyncStorage.getItem(VYDAJE_STORAGE_KEY);
-      if (jsonValue) {
-        const vsechnyVydaje: Vydaj[] = JSON.parse(jsonValue);
-        const mesicniVydajeData = vsechnyVydaje
-          .filter(vydaj => {
-            const datumVydaje = new Date(vydaj.datum);
-            return (
-              datumVydaje.getFullYear() === vybranyRok &&
-              datumVydaje.getMonth() === vybranyMesic &&
-              vydaj.kategorie === 'PROVOZ' // Pouze výdaje kategorie PROVOZ
-            );
-          })
-          .reduce((sum, vydaj) => sum + vydaj.castka, 0);
-        setMesicniVydaje(mesicniVydajeData);
-      }
-    } catch (error) {
-      console.error('Chyba při načítání měsíčních výdajů:', error);
-      setMesicniVydaje(0);
-    }
-  }, [vybranyMesic, vybranyRok]);
+  // Výpočet měsíčních výdajů (pouze kategorie PROVOZ)
+  const mesicniVydaje = useMemo(() => {
+    return vsechnyVydaje
+      .filter(vydaj => {
+        const datumVydaje = new Date(vydaj.datum);
+        return (
+          datumVydaje.getFullYear() === vybranyRok &&
+          datumVydaje.getMonth() === vybranyMesic &&
+          vydaj.kategorie === 'PROVOZ' // Pouze výdaje kategorie PROVOZ
+        );
+      })
+      .reduce((sum, vydaj) => sum + vydaj.castka, 0);
+  }, [vsechnyVydaje, vybranyMesic, vybranyRok]);
 
-  // Inicializační načtení dat
-  useEffect(() => {
-    nactiData();
-    nactiJinePrijmy();
-    nactiMesicniVydaje();
-  }, [nactiData, nactiJinePrijmy, nactiMesicniVydaje]);
+  // Aktualizace state při změně dat z real-time listeneru
+  const stav: ObchodPrehledState = useMemo(() => ({
+    ...zpracovanaData,
+    vsechnyPrijmy,
+    nacitaSe,
+  }), [zpracovanaData, vsechnyPrijmy, nacitaSe]);
 
   // Smazání jiného příjmu
   const smazatJinyPrijem = useCallback(async (id: string) => {
     try {
-      const jsonValue = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
-      if (jsonValue) {
-        const vsechnyPrijmy: Prijem[] = JSON.parse(jsonValue);
-        const novePrijmy = vsechnyPrijmy.filter(prijem => prijem.id !== id);
-        await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(novePrijmy));
-        await nactiJinePrijmy();
-        await nactiData();
-        await nactiMesicniVydaje();
+      const prijem = vsechnyPrijmy.find(p => p.id === id);
+      if (!prijem) {
+        Alert.alert('Chyba', 'Příjem nebyl nalezen');
+        return;
+      }
+
+      if (prijem.firestoreId) {
+        await FirestoreService.smazPrijem(prijem.firestoreId);
+        // Real-time listener automaticky aktualizuje UI
         Alert.alert('Úspěch', 'Příjem byl smazán');
+      } else {
+        Alert.alert('Chyba', 'Záznam nemá Firestore ID');
       }
     } catch (error) {
       console.error('Chyba při mazání příjmu:', error);
       Alert.alert('Chyba', 'Nepodařilo se smazat příjem');
     }
-  }, [nactiJinePrijmy, nactiData, nactiMesicniVydaje]);
+  }, [vsechnyPrijmy]);
+
+  // Editace jiného příjmu
+  const editovatJinyPrijem = useCallback(async (editedPrijem: Prijem) => {
+    if (!editedPrijem.firestoreId) {
+      Alert.alert('Chyba', 'Záznam nemá Firestore ID');
+      return;
+    }
+
+    try {
+      await FirestoreService.aktualizujPrijem(editedPrijem.firestoreId, {
+        castka: editedPrijem.castka,
+        datum: editedPrijem.datum,
+        kategorie: editedPrijem.kategorie,
+        popis: editedPrijem.popis || ''
+      });
+      // Real-time listener automaticky aktualizuje UI
+      Alert.alert('Úspěch', 'Příjem byl úspěšně upraven');
+    } catch (error) {
+      console.error('Chyba při editaci příjmu:', error);
+      Alert.alert('Chyba', 'Nepodařilo se upravit příjem');
+      throw error;
+    }
+  }, []);
 
   // Editace tržby
   const editovatTrzbu = useCallback(async (editedTrzba: Prijem) => {
+    if (!editedTrzba.firestoreId) {
+      Alert.alert('Chyba', 'Záznam nemá Firestore ID');
+      return;
+    }
+
     try {
-      const jsonValue = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
-      if (!jsonValue) {
-        throw new Error('Žádné příjmy k editaci');
-      }
-
-      const vsechnyPrijmy: Prijem[] = JSON.parse(jsonValue);
-      const trzbaIndex = vsechnyPrijmy.findIndex(p => p.id === editedTrzba.id);
-      
-      if (trzbaIndex === -1) {
-        throw new Error('Tržba nebyla nalezena');
-      }
-
-      // Aktualizace v AsyncStorage
-      vsechnyPrijmy[trzbaIndex] = editedTrzba;
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(vsechnyPrijmy));
-
-      // Aktualizace v Firestore, pokud má firestoreId
-      if (editedTrzba.firestoreId) {
-        try {
-          const firestoreData = {
-            castka: editedTrzba.castka,
-            datum: editedTrzba.datum,
-            kategorie: editedTrzba.kategorie,
-            popis: editedTrzba.popis || ''
-          };
-          
-          await FirestoreService.aktualizujPrijem(editedTrzba.firestoreId, firestoreData);
-        } catch (firestoreError) {
-          console.error('Chyba při aktualizaci v Firestore:', firestoreError);
-          // Pokračujeme i při chybě Firestore
-        }
-      }
-
-      // Aktualizace dat
-      await nactiData();
-      await nactiJinePrijmy();
-      await nactiMesicniVydaje();
-      
+      await FirestoreService.aktualizujPrijem(editedTrzba.firestoreId, {
+        castka: editedTrzba.castka,
+        datum: editedTrzba.datum,
+        kategorie: editedTrzba.kategorie,
+        popis: editedTrzba.popis || ''
+      });
+      // Real-time listener automaticky aktualizuje UI
       Alert.alert('Úspěch', 'Tržba byla úspěšně upravena');
     } catch (error) {
       console.error('Chyba při editaci tržby:', error);
       Alert.alert('Chyba', 'Nepodařilo se upravit tržbu');
       throw error;
     }
-  }, [nactiData, nactiJinePrijmy, nactiMesicniVydaje]);
+  }, []);
 
   // Smazání tržby
   const smazatTrzbu = useCallback(async (trzba: Prijem) => {
+    if (!trzba.firestoreId) {
+      Alert.alert('Chyba', 'Záznam nemá Firestore ID');
+      return;
+    }
+
     try {
-      const jsonValue = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
-      if (!jsonValue) {
-        throw new Error('Žádné příjmy k smazání');
-      }
-
-      const vsechnyPrijmy: Prijem[] = JSON.parse(jsonValue);
-      const aktualizovanaData = vsechnyPrijmy.filter(p => p.id !== trzba.id);
-      
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, JSON.stringify(aktualizovanaData));
-
-      // Smazání z Firestore, pokud má firestoreId
-      if (trzba.firestoreId) {
-        try {
-          await FirestoreService.smazDokument(FIRESTORE_COLLECTIONS.PRIJMY, trzba.firestoreId);
-        } catch (firestoreError) {
-          console.error('Chyba při mazání z Firestore:', firestoreError);
-          // Pokračujeme i při chybě Firestore
-        }
-      }
-
-      // Aktualizace dat
-      await nactiData();
-      await nactiJinePrijmy();
-      await nactiMesicniVydaje();
-      
+      await FirestoreService.smazPrijem(trzba.firestoreId);
+      // Real-time listener automaticky aktualizuje UI
       Alert.alert('Úspěch', 'Tržba byla úspěšně smazána');
     } catch (error) {
       console.error('Chyba při mazání tržby:', error);
       Alert.alert('Chyba', 'Nepodařilo se smazat tržbu');
       throw error;
     }
-  }, [nactiData, nactiJinePrijmy, nactiMesicniVydaje]);
+  }, []);
+
+  // Placeholder funkce pro kompatibilitu
+  const nactiData = useCallback(async () => {
+    // Real-time listener automaticky načítá data
+    // Tato funkce je pouze pro kompatibilitu
+  }, []);
+
+  const nactiJinePrijmy = useCallback(async () => {
+    // Real-time listener automaticky načítá data
+    // Tato funkce je pouze pro kompatibilitu
+  }, []);
+
+  const nactiMesicniVydaje = useCallback(async () => {
+    // Real-time listener automaticky načítá data
+    // Tato funkce je pouze pro kompatibilitu
+  }, []);
 
   return {
     ...stav,
@@ -278,7 +311,8 @@ export const useObchodPrehled = (
     nactiJinePrijmy,
     nactiMesicniVydaje,
     smazatJinyPrijem,
+    editovatJinyPrijem,
     editovatTrzbu,
     smazatTrzbu,
   };
-}; 
+};

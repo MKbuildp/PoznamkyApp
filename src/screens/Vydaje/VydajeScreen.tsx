@@ -5,7 +5,6 @@ import { FormularVydaju } from './components/FormularVydaju';
 import { useVydaje } from './hooks/useVydaje';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
-import { useFirestoreSync } from '../../hooks/useFirestoreSync';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Vydaje'>;
 
@@ -14,7 +13,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Vydaje'>;
  */
 export const VydajeScreen: React.FC<Props> = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
-  const { synchronizujZFirestore } = useFirestoreSync();
   const { state, handlers, utils } = useVydaje();
 
   /**
@@ -22,16 +20,9 @@ export const VydajeScreen: React.FC<Props> = ({ navigation }) => {
    */
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      // Synchronizace z Firebase
-      await synchronizujZFirestore();
-      // Aktualizace lokálních dat
-      await utils.nactiRocniVydaje();
-    } catch (error) {
-      console.error('Chyba při aktualizaci dat:', error);
-    } finally {
-      setRefreshing(false);
-    }
+    // Real-time listener automaticky aktualizuje data
+    // Pull-to-refresh pouze poskytuje vizuální feedback
+    setTimeout(() => setRefreshing(false), 500);
   };
 
   return (

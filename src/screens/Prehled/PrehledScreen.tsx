@@ -15,45 +15,39 @@ import { RootStackParamList } from '../../types/navigation';
 import { usePrehled } from './hooks/usePrehled';
 import { usePrehledTabulka } from './hooks/usePrehledTabulka';
 import { PrehledTabulka } from './components/PrehledTabulka';
-import { useFirestoreSync } from '../../hooks/useFirestoreSync';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Prehled'>;
 
 export const PrehledScreen: React.FC<Props> = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
-  const { synchronizujZFirestore } = useFirestoreSync();
+  
+  const tabulkaHook = usePrehledTabulka();
   
   const { 
     celkovePrijmy, 
     celkoveVydaje, 
     celkoveVydajeZbozi,
     celkoveVydajeProvoz,
-    nacitaSe, 
+    nacitaSe: prehledNacitaSe, 
     formatujCastku,
     nactiData
-  } = usePrehled();
-  const tabulkaHook = usePrehledTabulka();
+  } = usePrehled(tabulkaHook.vybranyRok);
+
+  // Kombinovaný loading state z obou hooků
+  const nacitaSe = prehledNacitaSe || tabulkaHook.nacitaSe;
 
   /**
    * @description Funkce pro aktualizaci dat při pull-to-refresh
    */
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      // Synchronizace z Firebase
-      await synchronizujZFirestore();
-      // Aktualizace lokálních dat
-      await nactiData();
-    } catch (error) {
-      console.error('Chyba při aktualizaci dat:', error);
-    } finally {
-      setRefreshing(false);
-    }
+    // Real-time listener automaticky aktualizuje data
+    // Pull-to-refresh pouze poskytuje vizuální feedback
+    setTimeout(() => setRefreshing(false), 500);
   };
 
-  useEffect(() => {
-    tabulkaHook.nactiDataProRok(tabulkaHook.vybranyRok);
-  }, []);
+  // Real-time listener automaticky načítá data při změně roku
+  // useEffect již není potřeba
 
   // Funkce pro navigaci - používáme přímé volání navigation.navigate
 

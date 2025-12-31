@@ -1,17 +1,26 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFirestoreRealtime } from '../../../hooks/useFirestoreRealtime';
+import { FirestoreService, FIRESTORE_COLLECTIONS, FirestorePrijem } from '../../../services/firestoreService';
 import { PrijmyVydajeState, UsePrijmyVydajeReturn, Prijem } from '../types/types';
 import { KategoriePrijmu } from '../../ObchodPrehledScreen/types/types';
-import { FirestoreService, FIRESTORE_COLLECTIONS } from '../../../services/firestoreService';
-
-const PRIJMY_STORAGE_KEY = 'seznamPrijmuData_v2';
 
 /**
- * @description Hook pro správu logiky obrazovky Koloniál (původně Příjmy)
- * 
- * POZNÁMKA: Tento hook slouží pro tab "Koloniál" v aplikaci
- * Původní název byl "Příjmy", ale uživatel ji označuje jako "Koloniál"
+ * @description Transformace Firestore dat na lokální typ
+ */
+const transformPrijem = (doc: any): Prijem => {
+  return {
+    id: doc.id,
+    castka: doc.castka,
+    datum: doc.datum, // ISO string z Firestore
+    kategorie: doc.kategorie as KategoriePrijmu,
+    popis: doc.popis || undefined,
+    firestoreId: doc.id
+  };
+};
+
+/**
+ * @description Hook pro správu logiky obrazovky Koloniál s real-time Firebase synchronizací
  */
 export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
   const [state, setState] = useState<PrijmyVydajeState>({
@@ -27,72 +36,65 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
     },
   });
 
-  // Stav pro jiné příjmy
-  const [jinePrijmy, setJinePrijmy] = useState<Prijem[]>([]);
+  // Real-time synchronizace z Firestore
+  const { 
+    data: firestorePrijmy, 
+    loading: nacitaSe, 
+    error: firestoreError 
+  } = useFirestoreRealtime<FirestorePrijem>({
+    collectionName: FIRESTORE_COLLECTIONS.PRIJMY,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: transformPrijem
+  });
 
-  // Načtení a výpočet roční částky příjmů
-  const nactiRocniPrijem = useCallback(async () => {
-    try {
-      const existujiciPrijmyString = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
-      
-      if (existujiciPrijmyString) {
-        const existujiciPrijmy: Prijem[] = JSON.parse(existujiciPrijmyString);
-        const aktuálníRok = state.prijmy.vybranyRok;
-        
-        const prijmyZRoku = existujiciPrijmy.filter(prijem => {
-          const rokPrijmu = new Date(prijem.datum).getFullYear();
-          return rokPrijmu === aktuálníRok;
-        });
-        
-        const celkovyPrijem = prijmyZRoku.reduce((suma, prijem) => suma + prijem.castka, 0);
-        
-        setState(prev => ({
-          ...prev,
-          prijmy: {
-            ...prev.prijmy,
-            rocniPrijem: celkovyPrijem
-          }
-        }));
+  // Transformace na lokální typy
+  const vsechnyPrijmy: Prijem[] = useMemo(() => {
+    return firestorePrijmy.map(p => ({
+      id: p.id || '',
+      castka: p.castka,
+      datum: p.datum,
+      kategorie: p.kategorie,
+      popis: p.popis,
+      firestoreId: p.id
+    }));
+  }, [firestorePrijmy]);
+
+  // Výpočet ročního příjmu
+  const rocniPrijem = useMemo(() => {
+    const prijmyZRoku = vsechnyPrijmy.filter(prijem => {
+      const rokPrijmu = new Date(prijem.datum).getFullYear();
+      return rokPrijmu === state.prijmy.vybranyRok;
+    });
+    return prijmyZRoku.reduce((suma, prijem) => suma + prijem.castka, 0);
+  }, [vsechnyPrijmy, state.prijmy.vybranyRok]);
+
+  // Aktualizace ročního příjmu ve state
+  useMemo(() => {
+    setState(prev => ({
+      ...prev,
+      prijmy: {
+        ...prev.prijmy,
+        rocniPrijem
       }
-    } catch (error) {
-      console.error('Chyba při načítání ročního příjmu:', error);
-    }
-  }, [state.prijmy.vybranyRok]);
+    }));
+  }, [rocniPrijem]);
 
-  // Načtení jiných příjmů
-  const nactiJinePrijmy = useCallback(async () => {
-    try {
-      const existujiciPrijmyString = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
-      
-      if (existujiciPrijmyString) {
-        const existujiciPrijmy: Prijem[] = JSON.parse(existujiciPrijmyString);
-        
-        // Filtrujeme pouze "Jiné" příjmy z aktuálního roku
-        const jinePrijmyZRoku = existujiciPrijmy.filter(prijem => {
-          const rokPrijmu = new Date(prijem.datum).getFullYear();
-          return rokPrijmu === state.prijmy.vybranyRok && prijem.kategorie === KategoriePrijmu.JINE;
-        });
-        
-        // Seřadíme podle data od nejnovějšího
-        const serazeneJinePrijmy = jinePrijmyZRoku.sort((a, b) => 
-          new Date(b.datum).getTime() - new Date(a.datum).getTime()
-        );
-        
-        setJinePrijmy(serazeneJinePrijmy);
-      } else {
-        setJinePrijmy([]);
-      }
-    } catch (error) {
-      console.error('Chyba při načítání jiných příjmů:', error);
-      setJinePrijmy([]);
-    }
-  }, [state.prijmy.vybranyRok]);
+  // Filtrování jiných příjmů pro aktuální rok
+  const jinePrijmy = useMemo(() => {
+    const jinePrijmyZRoku = vsechnyPrijmy.filter(prijem => {
+      const rokPrijmu = new Date(prijem.datum).getFullYear();
+      return rokPrijmu === state.prijmy.vybranyRok && prijem.kategorie === KategoriePrijmu.JINE;
+    });
+    return jinePrijmyZRoku.sort((a, b) => 
+      new Date(b.datum).getTime() - new Date(a.datum).getTime()
+    );
+  }, [vsechnyPrijmy, state.prijmy.vybranyRok]);
 
-  // Načtení dat při prvním renderu a při změně roku
-  useEffect(() => {
-    nactiRocniPrijem();
-    nactiJinePrijmy();
-  }, [nactiRocniPrijem, nactiJinePrijmy]);
+  // Error handling
+  if (firestoreError) {
+    console.error('Firestore error v usePrijmyVydaje:', firestoreError);
+  }
 
   // PŘÍJMY HANDLERS
   const prijmyHandleCastkaChange = useCallback((text: string) => {
@@ -143,43 +145,13 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
     }));
 
     try {
-      const novyPrijem: Prijem = {
-        id: Date.now().toString(),
+      // Přímé uložení do Firestore (real-time listener automaticky aktualizuje UI)
+      await FirestoreService.ulozPrijem({
         castka: parseFloat(state.prijmy.castka),
         datum: state.prijmy.datum.toISOString(),
-        kategorie: state.prijmy.kategorie,
-        popis: state.prijmy.kategorie === KategoriePrijmu.JINE ? state.prijmy.popis : undefined,
-      };
-
-      // Uložení do AsyncStorage (lokální úložiště)
-      const existujiciData = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
-      const prijmyData = existujiciData ? JSON.parse(existujiciData) : [];
-      
-      prijmyData.push(novyPrijem);
-      await AsyncStorage.setItem(PRIJMY_STORAGE_KEY, JSON.stringify(prijmyData));
-
-      // Uložení do Firestore (cloud synchronizace)
-      try {
-        const firestoreData = {
-          castka: novyPrijem.castka,
-          datum: novyPrijem.datum,
-          kategorie: novyPrijem.kategorie,
-          popis: novyPrijem.popis || ''
-        };
-        
-        const firestoreId = await FirestoreService.ulozPrijem(firestoreData);
-        
-        // Označení jako synchronizované v AsyncStorage
-        novyPrijem.firestoreId = firestoreId;
-        const aktualizovanaPrijmyData = prijmyData.map(p => 
-          p.id === novyPrijem.id ? { ...p, firestoreId } : p
-        );
-        await AsyncStorage.setItem(PRIJMY_STORAGE_KEY, JSON.stringify(aktualizovanaPrijmyData));
-      } catch (firestoreError) {
-        console.error('Chyba při ukládání do Firestore:', firestoreError);
-        // Data zůstávají v AsyncStorage i při chybě Firestore
-        Alert.alert('Upozornění', 'Data uložena lokálně, ale nepodařilo se synchronizovat s cloudem');
-      }
+        kategorie: state.prijmy.kategorie!,
+        popis: state.prijmy.kategorie === KategoriePrijmu.JINE ? state.prijmy.popis : ''
+      });
 
       setState(prev => ({ 
         ...prev, 
@@ -194,17 +166,15 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
       }));
 
       Alert.alert('Úspěch', 'Příjem byl úspěšně uložen');
-      await nactiRocniPrijem();
-      await nactiJinePrijmy();
     } catch (error) {
-      console.error('PRIJMY VYDAJE ERROR: Chyba při ukládání příjmu:', error);
+      console.error('Chyba při ukládání příjmu:', error);
       Alert.alert('Chyba', 'Nepodařilo se uložit příjem');
       setState(prev => ({ 
         ...prev, 
         prijmy: { ...prev.prijmy, isLoading: false }
       }));
     }
-  }, [state.prijmy.castka, state.prijmy.datum, state.prijmy.kategorie, state.prijmy.popis, nactiRocniPrijem, nactiJinePrijmy]);
+  }, [state.prijmy.castka, state.prijmy.datum, state.prijmy.kategorie, state.prijmy.popis]);
 
   /**
    * @description Handler pro uložení nového příjmu s daty z modálního okna
@@ -227,43 +197,13 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
     }));
 
     try {
-      const novyPrijem: Prijem = {
-        id: Date.now().toString(),
+      // Přímé uložení do Firestore (real-time listener automaticky aktualizuje UI)
+      await FirestoreService.ulozPrijem({
         castka: parseFloat(data.castka),
         datum: data.datum.toISOString(),
         kategorie: data.kategorie,
-        popis: data.kategorie === KategoriePrijmu.JINE ? data.popis : undefined,
-      };
-
-      // Uložení do AsyncStorage (lokální úložiště)
-      const existujiciData = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
-      const prijmyData = existujiciData ? JSON.parse(existujiciData) : [];
-      
-      prijmyData.push(novyPrijem);
-      await AsyncStorage.setItem(PRIJMY_STORAGE_KEY, JSON.stringify(prijmyData));
-
-      // Uložení do Firestore (cloud synchronizace)
-      try {
-        const firestoreData = {
-          castka: novyPrijem.castka,
-          datum: novyPrijem.datum,
-          kategorie: novyPrijem.kategorie,
-          popis: novyPrijem.popis || ''
-        };
-        
-        const firestoreId = await FirestoreService.ulozPrijem(firestoreData);
-        
-        // Označení jako synchronizované v AsyncStorage
-        novyPrijem.firestoreId = firestoreId;
-        const aktualizovanaData = prijmyData.map((p: any) => 
-          p.id === novyPrijem.id ? { ...p, firestoreId } : p
-        );
-        await AsyncStorage.setItem(PRIJMY_STORAGE_KEY, JSON.stringify(aktualizovanaData));
-      } catch (firestoreError) {
-        console.error('Chyba při ukládání do Firestore:', firestoreError);
-        // Data zůstávají v AsyncStorage i při chybě Firestore
-        Alert.alert('Upozornění', 'Data uložena lokálně, ale nepodařilo se synchronizovat s cloudem');
-      }
+        popis: data.kategorie === KategoriePrijmu.JINE ? data.popis : ''
+      });
 
       setState(prev => ({ 
         ...prev, 
@@ -278,17 +218,15 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
       }));
 
       Alert.alert('Úspěch', 'Příjem byl úspěšně uložen');
-      await nactiRocniPrijem();
-      await nactiJinePrijmy();
     } catch (error) {
-      console.error('PRIJMY VYDAJE ERROR: Chyba při ukládání příjmu:', error);
+      console.error('Chyba při ukládání příjmu:', error);
       Alert.alert('Chyba', 'Nepodařilo se uložit příjem');
       setState(prev => ({ 
         ...prev, 
         prijmy: { ...prev.prijmy, isLoading: false }
       }));
     }
-  }, [nactiRocniPrijem, nactiJinePrijmy]);
+  }, []);
 
   const prijmyHandleDatePickerVisibilityChange = useCallback((isVisible: boolean) => {
     setState(prev => ({ 
@@ -306,20 +244,13 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
 
   const smazatPosledniPrijem = useCallback(async () => {
     try {
-      const existujiciData = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
-      if (!existujiciData) {
-        Alert.alert('Info', 'Žádné příjmy k odstranění');
-        return;
-      }
-
-      const prijmyData: Prijem[] = JSON.parse(existujiciData);
-      if (prijmyData.length === 0) {
+      if (vsechnyPrijmy.length === 0) {
         Alert.alert('Info', 'Žádné příjmy k odstranění');
         return;
       }
 
       // Seřadíme podle data a vezmeme poslední (nejnovější) záznam
-      const serazeneData = [...prijmyData].sort((a, b) => 
+      const serazeneData = [...vsechnyPrijmy].sort((a, b) => 
         new Date(b.datum).getTime() - new Date(a.datum).getTime()
       );
       
@@ -337,33 +268,12 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
             style: 'destructive',
             onPress: async () => {
               try {
-                // Odstraníme poslední záznam z AsyncStorage
-                const aktualizovanaData = prijmyData.filter(p => p.id !== posledniPrijem.id);
-                await AsyncStorage.setItem(PRIJMY_STORAGE_KEY, JSON.stringify(aktualizovanaData));
-                
-                // Odstraníme také z Firebase, pokud má firestoreId
                 if (posledniPrijem.firestoreId) {
-                  try {
-                    await FirestoreService.smazDokument(FIRESTORE_COLLECTIONS.PRIJMY, posledniPrijem.firestoreId);
-                  } catch (firebaseError) {
-                    console.error('Chyba při mazání z Firebase:', firebaseError);
-                    // Pokračujeme i při chybě Firebase
-                  }
-                }
-                
-                Alert.alert('Úspěch', 'Poslední příjem byl odstraněn');
-                await nactiRocniPrijem();
-                await nactiJinePrijmy();
-                
-                // Explicitní aktualizace příjmů pro UI
-                const aktualizovanePrijmy = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
-                if (aktualizovanePrijmy) {
-                  const prijmy: Prijem[] = JSON.parse(aktualizovanePrijmy);
-                  const rocniPrijmy = prijmy.filter(p => {
-                    const datumPrijmu = new Date(p.datum);
-                    return datumPrijmu.getFullYear() === state.prijmy.vybranyRok;
-                  });
-                  setJinePrijmy(rocniPrijmy);
+                  await FirestoreService.smazPrijem(posledniPrijem.firestoreId);
+                  // Real-time listener automaticky aktualizuje UI
+                  Alert.alert('Úspěch', 'Poslední příjem byl odstraněn');
+                } else {
+                  Alert.alert('Chyba', 'Záznam nemá Firestore ID');
                 }
               } catch (error) {
                 console.error('Chyba při mazání příjmu:', error);
@@ -377,10 +287,16 @@ export const usePrijmyVydaje = (): UsePrijmyVydajeReturn => {
       console.error('Chyba při načítání příjmů:', error);
       Alert.alert('Chyba', 'Nepodařilo se načíst příjmy');
     }
-  }, [nactiRocniPrijem, nactiJinePrijmy]);
+  }, [vsechnyPrijmy]);
 
   const formatujDatum = useCallback((date: Date): string => {
     return date.toLocaleDateString('cs-CZ');
+  }, []);
+
+  // Placeholder pro nactiRocniPrijem - zachováno pro kompatibilitu
+  const nactiRocniPrijem = useCallback(async () => {
+    // Real-time listener automaticky načítá data
+    // Tato funkce je pouze pro kompatibilitu
   }, []);
 
   return {

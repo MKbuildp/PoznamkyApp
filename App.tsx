@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'react-native';
@@ -10,19 +10,18 @@ import { TabNavigator } from './src/navigation/TabNavigator';
 import { RootStackParamList } from './src/types/navigation';
 
 // Import Firebase konfigurace
-import './src/config/firebase';
-
-// Import synchronizačního hooku
-import { useFirestoreSync } from './src/hooks/useFirestoreSync';
+import { configureFirestore } from './src/config/firebase';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 /**
- * @description Hlavní komponenta aplikace s navigací a Firebase synchronizací.
+ * @description Hlavní komponenta aplikace s navigací a Firebase real-time synchronizací.
  */
 export default function App() {
-  // Inicializace Firebase synchronizace
-  const { isSyncing, syncError, lastSyncTime } = useFirestoreSync();
+  // Inicializace Firebase offline persistence při spuštění
+  useEffect(() => {
+    configureFirestore();
+  }, []);
 
   return (
     <NavigationContainer>

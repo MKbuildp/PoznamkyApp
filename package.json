@@ -5,8 +5,8 @@
   "scripts": {
     "start": "expo start --tunnel",
     "start:lan": "expo start --lan",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "build:android": "expo export:embed --platform android --dev false --bundle-output ./temp/bundle.js --sourcemap-output ./temp/bundle.map",
     "build:android-dev": "expo export:embed --platform android --dev true --bundle-output ./temp/bundle.js --sourcemap-output ./temp/bundle.map",
@@ -35,6 +35,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
+    "@expo/config-plugins": "~9.0.0",
     "@expo/metro-config": "~54.0.2",
     "@types/react": "~19.1.10",
     "@types/react-navigation": "^3.0.8",

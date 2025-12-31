@@ -51,6 +51,7 @@ export interface UseObchodPrehledReturn extends ObchodPrehledState {
   nactiJinePrijmy: () => Promise<void>;
   nactiMesicniVydaje: () => Promise<void>;
   smazatJinyPrijem: (id: string) => Promise<void>;
+  editovatJinyPrijem: (editedPrijem: Prijem) => Promise<void>;
   editovatTrzbu: (editedTrzba: Prijem) => Promise<void>;
   smazatTrzbu: (trzba: Prijem) => Promise<void>;
 }

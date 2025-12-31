@@ -19,6 +19,7 @@ import { useVydajePrehled } from '../VydajePrehled/hooks/useVydajePrehled';
 import { VydajeSeznam } from '../VydajePrehled/components/VydajeSeznam';
 import { EditVydajModal, VydajPrijmy } from './components/EditVydajModal';
 import { EditTrzbaModal } from './components/EditTrzbaModal';
+import { EditJinyPrijemModal } from './components/EditJinyPrijemModal';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
 import { useFocusEffect } from '@react-navigation/native';
@@ -38,13 +39,14 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
   const [selectedVydaj, setSelectedVydaj] = useState<VydajPrijmy | null>(null);
   const [editTrzbaModalVisible, setEditTrzbaModalVisible] = useState(false);
   const [selectedTrzba, setSelectedTrzba] = useState<any>(null);
+  const [editJinyPrijemModalVisible, setEditJinyPrijemModalVisible] = useState(false);
+  const [selectedJinyPrijem, setSelectedJinyPrijem] = useState<any>(null);
   const [aktivniTab, setAktivniTab] = useState<'prijem' | 'vydaj'>('prijem');
   const [trzbyVisible, setTrzbyVisible] = useState(false);
   const [jinePrijmyVisible, setJinePrijmyVisible] = useState(false);
   const [vydajeVisible, setVydajeVisible] = useState(false);
   const [formularVisible, setFormularVisible] = useState(false);
   const [novyZaznamModalVisible, setNovyZaznamModalVisible] = useState(false);
-  const { synchronizujZFirestore } = useFirestoreSync();
   
   const { 
     state, 
@@ -88,6 +90,7 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
     nactiData,
     nactiJinePrijmy,
     smazatJinyPrijem,
+    editovatJinyPrijem,
     editovatTrzbu,
     smazatTrzbu,
   } = useObchodPrehled(vybranyMesic, vybranyRok);
@@ -106,22 +109,9 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
    */
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      // Synchronizace z Firebase
-      await synchronizujZFirestore();
-      // Aktualizace lokálních dat
-      await nactiData();
-      await nactiJinePrijmy();
-      // Aktualizace výdajů
-      await vydajeUtils.nactiRocniVydaje();
-      await vydajeNactiData(vybranyMesic, vybranyRok);
-      // Aktualizace příjmů
-      await utils.nactiRocniPrijem();
-    } catch (error) {
-      console.error('Chyba při aktualizaci dat:', error);
-    } finally {
-      setRefreshing(false);
-    }
+    // Real-time listener automaticky aktualizuje data
+    // Pull-to-refresh pouze poskytuje vizuální feedback
+    setTimeout(() => setRefreshing(false), 500);
   };
 
   /**
@@ -229,14 +219,54 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   /**
+   * @description Otevření modálního okna pro editaci jiného příjmu
+   */
+  const handleEditJinyPrijem = (prijem: any) => {
+    setSelectedJinyPrijem(prijem);
+    setEditJinyPrijemModalVisible(true);
+  };
+
+  /**
+   * @description Zavření modálního okna pro jiné příjmy
+   */
+  const handleCloseEditJinyPrijemModal = () => {
+    setEditJinyPrijemModalVisible(false);
+    setSelectedJinyPrijem(null);
+  };
+
+  /**
+   * @description Uložení editovaného jiného příjmu
+   */
+  const handleSaveEditedJinyPrijem = async (editedPrijem: any) => {
+    try {
+      await editovatJinyPrijem(editedPrijem);
+      // Real-time listener automaticky aktualizuje UI
+    } catch (error) {
+      console.error('Chyba při ukládání editovaného příjmu:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * @description Smazání jiného příjmu
+   */
+  const handleDeleteJinyPrijem = async (prijem: any) => {
+    try {
+      await smazatJinyPrijem(prijem.id);
+      // Real-time listener automaticky aktualizuje UI
+    } catch (error) {
+      console.error('Chyba při mazání příjmu:', error);
+      throw error;
+    }
+  };
+
+  /**
    * @description Uložení editované tržby
    */
   const handleSaveEditedTrzba = async (editedTrzba: any) => {
     try {
       await editovatTrzbu(editedTrzba);
-      // Aktualizace dat po úspěšném uložení
-      await nactiData();
-      await nactiJinePrijmy();
+      // Real-time listener automaticky aktualizuje UI
     } catch (error) {
       console.error('Chyba při ukládání editované tržby:', error);
       throw error;
@@ -554,6 +584,7 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
                     jinePrijmy={jinePrijmy}
                     formatujCastku={formatujCastku}
                     formatujDatumZeStringu={formatujDatumZeStringu}
+                    onEdit={handleEditJinyPrijem}
                     isCollapsible={false}
                     isVisible={true}
                   />
@@ -606,6 +637,14 @@ export const PrijmyVydajeScreen: React.FC<Props> = ({ navigation }) => {
         onClose={handleCloseEditTrzbaModal}
         onSave={handleSaveEditedTrzba}
         onDelete={smazatTrzbu}
+      />
+
+      <EditJinyPrijemModal
+        visible={editJinyPrijemModalVisible}
+        prijem={selectedJinyPrijem}
+        onClose={handleCloseEditJinyPrijemModal}
+        onSave={handleSaveEditedJinyPrijem}
+        onDelete={handleDeleteJinyPrijem}
       />
 
       {/* Modální okno pro nový záznam */}

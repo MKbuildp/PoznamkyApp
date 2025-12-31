@@ -1,9 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
-
-const PRIJMY_STORAGE_KEY = 'seznamPrijmuData_v2';
-const VYDAJE_STORAGE_KEY = 'seznamVydajuData_v1';
+import { useState, useCallback, useMemo } from 'react';
+import { useFirestoreRealtime } from '../../../hooks/useFirestoreRealtime';
+import { FIRESTORE_COLLECTIONS, FirestorePrijem, FirestoreVydaj } from '../../../services/firestoreService';
 
 interface PrehledState {
   celkovePrijmy: number;
@@ -15,73 +12,102 @@ interface PrehledState {
 
 interface UsePrehledReturn extends PrehledState {
   formatujCastku: (castka: number) => string;
+  nactiData: () => Promise<void>;
 }
 
 /**
- * @description Hook pro načítání celkových částek příjmů a výdajů
+ * @description Hook pro načítání celkových částek příjmů a výdajů s real-time synchronizací
+ * @param vybranyRok - Rok, pro který se mají zobrazit data
  */
-export const usePrehled = (): UsePrehledReturn => {
-  const [state, setState] = useState<PrehledState>({
-    celkovePrijmy: 0,
-    celkoveVydaje: 0,
-    celkoveVydajeZbozi: 0,
-    celkoveVydajeProvoz: 0,
-    nacitaSe: true,
+export const usePrehled = (vybranyRok: number): UsePrehledReturn => {
+  // Real-time synchronizace příjmů z Firestore
+  const { 
+    data: firestorePrijmy, 
+    loading: prijmyNacitaSe 
+  } = useFirestoreRealtime<FirestorePrijem>({
+    collectionName: FIRESTORE_COLLECTIONS.PRIJMY,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: (doc) => ({
+      id: doc.id,
+      castka: doc.castka,
+      datum: doc.datum,
+      kategorie: doc.kategorie,
+      popis: doc.popis,
+      firestoreId: doc.id
+    })
   });
 
-  const nactiData = useCallback(async () => {
-    setState(prev => ({ ...prev, nacitaSe: true }));
-    try {
-      // Načtení příjmů
-      const prijmyString = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
-      const prijmy = prijmyString ? JSON.parse(prijmyString) : [];
-      const celkovePrijmy = prijmy.reduce((sum: number, prijem: { castka: number }) => 
-        sum + prijem.castka, 0);
+  // Real-time synchronizace výdajů z Firestore
+  const { 
+    data: firestoreVydaje, 
+    loading: vydajeNacitaSe 
+  } = useFirestoreRealtime<FirestoreVydaj>({
+    collectionName: FIRESTORE_COLLECTIONS.VYDAJE,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: (doc) => ({
+      id: doc.id,
+      castka: doc.castka,
+      datum: doc.datum,
+      kategorie: doc.kategorie,
+      dodavatel: doc.dodavatel,
+      firestoreId: doc.id
+    })
+  });
 
-      // Načtení výdajů
-      const vydajeString = await AsyncStorage.getItem(VYDAJE_STORAGE_KEY);
-      const vydaje = vydajeString ? JSON.parse(vydajeString) : [];
-      
-      // Výpočet celkových výdajů a výdajů podle kategorií
-      const celkoveVydaje = vydaje.reduce((sum: number, vydaj: { castka: number }) => 
-        sum + vydaj.castka, 0);
-      
-      const celkoveVydajeZbozi = vydaje
-        .filter((vydaj: { kategorie: string }) => vydaj.kategorie === 'ZBOZI')
-        .reduce((sum: number, vydaj: { castka: number }) => sum + vydaj.castka, 0);
-      
-      const celkoveVydajeProvoz = vydaje
-        .filter((vydaj: { kategorie: string }) => vydaj.kategorie === 'PROVOZ')
-        .reduce((sum: number, vydaj: { castka: number }) => sum + vydaj.castka, 0);
+  // Výpočet celkových částek pro vybraný rok
+  const vypocty = useMemo(() => {
+    // Filtrování příjmů podle vybraného roku
+    const prijmyZRoku = firestorePrijmy.filter((prijem) => {
+      const datumPrijmu = new Date(prijem.datum);
+      return datumPrijmu.getFullYear() === vybranyRok;
+    });
+    
+    // Filtrování výdajů podle vybraného roku
+    const vydajeZRoku = firestoreVydaje.filter((vydaj) => {
+      const datumVydaje = new Date(vydaj.datum);
+      return datumVydaje.getFullYear() === vybranyRok;
+    });
+    
+    const celkovePrijmy = prijmyZRoku.reduce((sum, prijem) => sum + prijem.castka, 0);
+    
+    const celkoveVydaje = vydajeZRoku.reduce((sum, vydaj) => sum + vydaj.castka, 0);
+    
+    const celkoveVydajeZbozi = vydajeZRoku
+      .filter(vydaj => vydaj.kategorie === 'ZBOZI')
+      .reduce((sum, vydaj) => sum + vydaj.castka, 0);
+    
+    const celkoveVydajeProvoz = vydajeZRoku
+      .filter(vydaj => vydaj.kategorie === 'PROVOZ')
+      .reduce((sum, vydaj) => sum + vydaj.castka, 0);
 
-      setState({
-        celkovePrijmy,
-        celkoveVydaje,
-        celkoveVydajeZbozi,
-        celkoveVydajeProvoz,
-        nacitaSe: false,
-      });
-    } catch (error) {
-      console.error('Chyba při načítání dat přehledu:', error);
-      setState(prev => ({ ...prev, nacitaSe: false }));
-    }
-  }, []);
+    return {
+      celkovePrijmy,
+      celkoveVydaje,
+      celkoveVydajeZbozi,
+      celkoveVydajeProvoz
+    };
+  }, [firestorePrijmy, firestoreVydaje, vybranyRok]);
 
-
-
-  // Použijeme useFocusEffect místo useEffect pro aktualizaci při návratu na obrazovku
-  useFocusEffect(
-    useCallback(() => {
-      nactiData();
-    }, [nactiData])
-  );
+  const nacitaSe = prijmyNacitaSe || vydajeNacitaSe;
 
   const formatujCastku = useCallback((castka: number): string => {
     return `${Math.round(castka).toLocaleString('cs-CZ')} Kč`;
   }, []);
 
+  // Placeholder funkce pro kompatibilitu
+  const nactiData = useCallback(async () => {
+    // Real-time listener automaticky načítá data
+    // Tato funkce je pouze pro kompatibilitu
+  }, []);
+
   return {
-    ...state,
+    celkovePrijmy: vypocty.celkovePrijmy,
+    celkoveVydaje: vypocty.celkoveVydaje,
+    celkoveVydajeZbozi: vypocty.celkoveVydajeZbozi,
+    celkoveVydajeProvoz: vypocty.celkoveVydajeProvoz,
+    nacitaSe,
     formatujCastku,
     nactiData,
   };

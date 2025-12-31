@@ -5,7 +5,6 @@ import { FormularPrijmu } from './components/FormularPrijmu';
 import { usePrijmy } from './hooks/usePrijmy';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
-import { useFirestoreSync } from '../../hooks/useFirestoreSync';
 
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Prijmy'>;
@@ -15,7 +14,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Prijmy'>;
  */
 export const PrijmyScreen: React.FC<Props> = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
-  const { synchronizujZFirestore } = useFirestoreSync();
   const { state, handlers, utils } = usePrijmy();
 
   /**
@@ -23,16 +21,9 @@ export const PrijmyScreen: React.FC<Props> = ({ navigation }) => {
    */
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      // Synchronizace z Firebase
-      await synchronizujZFirestore();
-      // Aktualizace lokálních dat
-      await utils.nactiRocniPrijem();
-    } catch (error) {
-      console.error('Chyba při aktualizaci dat:', error);
-    } finally {
-      setRefreshing(false);
-    }
+    // Real-time listener automaticky aktualizuje data
+    // Pull-to-refresh pouze poskytuje vizuální feedback
+    setTimeout(() => setRefreshing(false), 500);
   };
 
   return (

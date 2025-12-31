@@ -14,7 +14,6 @@ import { NovyZaznamModal } from '../../components/NovyZaznamModal';
 
 // Import hooks
 import { useWaxDream, WaxDreamPrijem, WaxDreamVydaj } from './hooks/useWaxDream';
-import { useFirestoreSync } from '../../hooks/useFirestoreSync';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WaxDream'>;
 
@@ -37,9 +36,6 @@ export const WaxDreamScreen: React.FC<Props> = () => {
 
   // Hook pro WaxDream data
   const { state, handlers } = useWaxDream();
-
-  // Hook pro Firebase synchronizaci
-  const { synchronizujDoFirestore, synchronizujZFirestore, isSyncing } = useFirestoreSync();
 
   // State pro formulář
   const [prijmyState, setPrijmyState] = useState({
@@ -176,19 +172,13 @@ export const WaxDreamScreen: React.FC<Props> = () => {
 
   /**
    * @description Funkce pro aktualizaci dat při pull-to-refresh
+   * Real-time listener automaticky aktualizuje data, pull-to-refresh pouze resetuje loading stav
    */
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      // Synchronizace z Firebase do AsyncStorage
-      await synchronizujZFirestore();
-      // Obnovení dat z AsyncStorage
-      await handlers.nactiData?.();
-    } catch (error) {
-      console.error('Chyba při synchronizaci:', error);
-    } finally {
-      setRefreshing(false);
-    }
+    // Real-time listener automaticky aktualizuje data
+    // Pull-to-refresh pouze poskytuje vizuální feedback
+    setTimeout(() => setRefreshing(false), 500);
   };
 
   return (
@@ -200,7 +190,7 @@ export const WaxDreamScreen: React.FC<Props> = () => {
         style={styles.scrollView}
         contentContainerStyle={styles.contentContainer}
         refreshControl={
-          <RefreshControl refreshing={refreshing || isSyncing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
         {/* 1. Celkový přehled z Příjmy */}

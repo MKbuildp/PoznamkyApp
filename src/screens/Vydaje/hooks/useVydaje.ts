@@ -1,15 +1,29 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFirestoreRealtime } from '../../../hooks/useFirestoreRealtime';
+import { FirestoreService, FIRESTORE_COLLECTIONS, FirestoreVydaj } from '../../../services/firestoreService';
 import { VydajeState, UseVydajeReturn, Vydaj, KategorieVydaju } from '../types/types';
-import { FirestoreService, FIRESTORE_COLLECTIONS } from '../../../services/firestoreService';
 
-const STORAGE_KEY = 'seznamVydajuData_v1';
-const DODAVATELE_STORAGE_KEY = 'seznamDodavateluData_v1';
+const DODAVATELE_STORAGE_KEY = 'seznamDodavateluData_v1'; // Pouze pro návrhy dodavatelů
 
 /**
- * @description Hook pro správu logiky výdajů s hybridním ukládáním (AsyncStorage + Firestore)
+ * @description Transformace Firestore dat na lokální typ
+ */
+const transformVydaj = (doc: any): Vydaj => {
+  return {
+    id: doc.id,
+    castka: doc.castka,
+    datum: doc.datum, // ISO string z Firestore
+    kategorie: doc.kategorie as KategorieVydaju,
+    dodavatel: doc.dodavatel,
+    firestoreId: doc.id
+  };
+};
+
+/**
+ * @description Hook pro správu logiky výdajů s real-time Firebase synchronizací
  */
 export const useVydaje = (): UseVydajeReturn => {
   const [state, setState] = useState<VydajeState>({
@@ -29,71 +43,83 @@ export const useVydaje = (): UseVydajeReturn => {
     },
   });
 
-  // Načtení seznamu unikátních dodavatelů
+  // Real-time synchronizace výdajů z Firestore
+  const { 
+    data: firestoreVydaje, 
+    loading: nacitaSe, 
+    error: firestoreError 
+  } = useFirestoreRealtime<FirestoreVydaj>({
+    collectionName: FIRESTORE_COLLECTIONS.VYDAJE,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: transformVydaj
+  });
+
+  // Transformace na lokální typy
+  const vsechnyVydaje: Vydaj[] = useMemo(() => {
+    return firestoreVydaje.map(v => ({
+      id: v.id || '',
+      castka: v.castka,
+      datum: v.datum,
+      kategorie: v.kategorie as KategorieVydaju,
+      dodavatel: v.dodavatel,
+      firestoreId: v.id
+    }));
+  }, [firestoreVydaje]);
+
+  // Výpočet ročních výdajů
+  const rocniVydaje = useMemo(() => {
+    const aktualniRok = new Date().getFullYear();
+    const rocniVydaje = vsechnyVydaje.filter(vydaj => {
+      const datum = new Date(vydaj.datum);
+      return datum.getFullYear() === aktualniRok;
+    });
+
+    const zbozi = rocniVydaje
+      .filter(v => v.kategorie === KategorieVydaju.ZBOZI)
+      .reduce((sum, v) => sum + v.castka, 0);
+    
+    const provoz = rocniVydaje
+      .filter(v => v.kategorie === KategorieVydaju.PROVOZ)
+      .reduce((sum, v) => sum + v.castka, 0);
+
+    return {
+      zbozi,
+      provoz,
+      celkem: zbozi + provoz,
+    };
+  }, [vsechnyVydaje]);
+
+  // Aktualizace ročních výdajů ve state
+  useMemo(() => {
+    setState(prev => ({
+      ...prev,
+      rocniVydaje
+    }));
+  }, [rocniVydaje]);
+
+  // Error handling
+  if (firestoreError) {
+    console.error('Firestore error v useVydaje:', firestoreError);
+  }
+
+  // Načtení seznamu unikátních dodavatelů z Firestore pro návrhy
   const nactiDodavatele = useCallback(async () => {
     try {
-      const ulozeneDodavateleString = await AsyncStorage.getItem(DODAVATELE_STORAGE_KEY);
-      if (ulozeneDodavateleString) {
-        const ulozeneDodavatele: string[] = JSON.parse(ulozeneDodavateleString);
-        // Seznam je již načten, ale neaktualizujeme state, abychom nezpůsobili zbytečný re-render
-        // Použijeme tento seznam jen když je potřeba, např. při změně pole dodavatel
-      }
+      // Získáme unikátní dodavatele z aktuálních výdajů
+      const unikatniDodavatele = Array.from(new Set(vsechnyVydaje.map(v => v.dodavatel)));
+      
+      // Uložíme do AsyncStorage pro rychlý přístup při návrzích
+      await AsyncStorage.setItem(DODAVATELE_STORAGE_KEY, JSON.stringify(unikatniDodavatele));
     } catch (error) {
-      console.error('Chyba při načítání seznamu dodavatelů:', error);
+      console.error('Chyba při ukládání seznamu dodavatelů:', error);
     }
-  }, []);
+  }, [vsechnyVydaje]);
 
-  // Načtení seznamu dodavatelů při inicializaci
+  // Aktualizace seznamu dodavatelů při změně výdajů
   useEffect(() => {
     nactiDodavatele();
   }, [nactiDodavatele]);
-
-  // Načtení a výpočet ročních výdajů
-  const nactiRocniVydaje = useCallback(async () => {
-    try {
-      const existujiciVydajeString = await AsyncStorage.getItem(STORAGE_KEY);
-      if (existujiciVydajeString) {
-        const existujiciVydaje: Vydaj[] = JSON.parse(existujiciVydajeString);
-        
-        // Filtrování výdajů pro aktuální rok
-        const rocniVydaje = existujiciVydaje.filter(vydaj => {
-          const datum = new Date(vydaj.datum);
-          return datum.getFullYear() === new Date().getFullYear();
-        });
-
-        // Výpočet součtů podle kategorií
-        const zbozi = rocniVydaje
-          .filter(v => v.kategorie === KategorieVydaju.ZBOZI)
-          .reduce((sum, v) => sum + v.castka, 0);
-        
-        const provoz = rocniVydaje
-          .filter(v => v.kategorie === KategorieVydaju.PROVOZ)
-          .reduce((sum, v) => sum + v.castka, 0);
-
-        setState(prev => ({
-          ...prev,
-          rocniVydaje: {
-            zbozi,
-            provoz,
-            celkem: zbozi + provoz,
-          },
-        }));
-      }
-    } catch (error) {
-      console.error('Chyba při načítání ročních výdajů:', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    nactiRocniVydaje();
-  }, [nactiRocniVydaje]);
-
-  // Automatická aktualizace při návratu na obrazovku
-  useFocusEffect(
-    useCallback(() => {
-      nactiRocniVydaje();
-    }, [nactiRocniVydaje])
-  );
 
   const handleCastkaChange = useCallback((text: string) => {
     const cistyText = text.replace(/[^0-9.]/g, '');
@@ -118,7 +144,7 @@ export const useVydaje = (): UseVydajeReturn => {
     
     if (text.trim().length >= 2) {
       try {
-        // Načítání existujících dodavatelů pro návrhy
+        // Načítání existujících dodavatelů pro návrhy z AsyncStorage
         const ulozeneDodavateleString = await AsyncStorage.getItem(DODAVATELE_STORAGE_KEY);
         if (ulozeneDodavateleString) {
           const ulozeneDodavatele: string[] = JSON.parse(ulozeneDodavateleString);
@@ -186,46 +212,20 @@ export const useVydaje = (): UseVydajeReturn => {
       return;
     }
 
+    if (!state.kategorie) {
+      Alert.alert('Chyba', 'Prosím vyberte kategorii');
+      return;
+    }
+
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      const novyVydaj: Vydaj = {
-        id: Date.now().toString(),
+      // Přímé uložení do Firestore (real-time listener automaticky aktualizuje UI)
+      await FirestoreService.ulozVydaj({
         castka: parseFloat(state.castka),
         datum: state.datum.toISOString(),
         kategorie: state.kategorie,
-        dodavatel: state.dodavatel.trim(),
-      };
-
-      // Uložení do AsyncStorage (lokální úložiště)
-      const existujiciVydajeString = await AsyncStorage.getItem(STORAGE_KEY);
-      const existujiciVydaje: Vydaj[] = existujiciVydajeString 
-        ? JSON.parse(existujiciVydajeString) 
-        : [];
-
-      const noveVydaje = [...existujiciVydaje, novyVydaj];
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(noveVydaje));
-
-      // Uložení do Firestore (cloud synchronizace)
-      try {
-        const firestoreData = {
-          castka: novyVydaj.castka,
-          datum: novyVydaj.datum,
-          kategorie: novyVydaj.kategorie,
-          dodavatel: novyVydaj.dodavatel
-        };
-        
-        const firestoreId = await FirestoreService.ulozVydaj(firestoreData);
-        
-        // Označení jako synchronizované v AsyncStorage
-        novyVydaj.firestoreId = firestoreId;
-        const aktualizovaneVydaje = [...existujiciVydaje, novyVydaj];
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(aktualizovaneVydaje));
-      } catch (firestoreError) {
-        console.error('VYDAJE ERROR: Chyba při ukládání do Firestore:', firestoreError);
-        console.error('VYDAJE ERROR: Full error object:', JSON.stringify(firestoreError, null, 2));
-        // Data zůstávají v AsyncStorage i při chybě Firestore
-        Alert.alert('Upozornění', 'Data uložena lokálně, ale nepodařilo se synchronizovat s cloudem');
-      }
+        dodavatel: state.dodavatel.trim()
+      });
 
       // Uložíme dodavatele do seznamu pro budoucí návrhy
       await ulozNovehoDodavatele(state.dodavatel.trim());
@@ -238,30 +238,6 @@ export const useVydaje = (): UseVydajeReturn => {
         kategorie: undefined as any,
         isLoading: false,
       }));
-
-      // Okamžitá aktualizace UI - přepočítání ročních výdajů
-      const aktualizovaneVydaje = [...existujiciVydaje, novyVydaj];
-      const rocniVydaje = aktualizovaneVydaje.filter(vydaj => {
-        const datum = new Date(vydaj.datum);
-        return datum.getFullYear() === new Date().getFullYear();
-      });
-
-      const zbozi = rocniVydaje
-        .filter(v => v.kategorie === KategorieVydaju.ZBOZI)
-        .reduce((sum, v) => sum + v.castka, 0);
-      
-      const provoz = rocniVydaje
-        .filter(v => v.kategorie === KategorieVydaju.PROVOZ)
-        .reduce((sum, v) => sum + v.castka, 0);
-
-      setState(prev => ({
-        ...prev,
-        rocniVydaje: {
-          zbozi,
-          provoz,
-          celkem: zbozi + provoz,
-        },
-      }));
       
       Alert.alert('Úspěch', 'Výdaj byl úspěšně uložen');
     } catch (error) {
@@ -269,7 +245,7 @@ export const useVydaje = (): UseVydajeReturn => {
       Alert.alert('Chyba', 'Nepodařilo se uložit výdaj');
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [state.castka, state.datum, state.kategorie, state.dodavatel, nactiRocniVydaje, ulozNovehoDodavatele]);
+  }, [state.castka, state.datum, state.kategorie, state.dodavatel, ulozNovehoDodavatele]);
 
   /**
    * @description Handler pro uložení nového výdaje s daty z modálního okna
@@ -285,46 +261,20 @@ export const useVydaje = (): UseVydajeReturn => {
       return;
     }
 
+    if (!data.kategorie) {
+      Alert.alert('Chyba', 'Prosím vyberte kategorii');
+      return;
+    }
+
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      const novyVydaj: Vydaj = {
-        id: Date.now().toString(),
+      // Přímé uložení do Firestore (real-time listener automaticky aktualizuje UI)
+      await FirestoreService.ulozVydaj({
         castka: parseFloat(data.castka),
         datum: data.datum.toISOString(),
         kategorie: data.kategorie,
-        dodavatel: data.dodavatel.trim(),
-      };
-
-      // Uložení do AsyncStorage (lokální úložiště)
-      const existujiciVydajeString = await AsyncStorage.getItem(STORAGE_KEY);
-      const existujiciVydaje: Vydaj[] = existujiciVydajeString 
-        ? JSON.parse(existujiciVydajeString) 
-        : [];
-
-      const noveVydaje = [...existujiciVydaje, novyVydaj];
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(noveVydaje));
-
-      // Uložení do Firestore (cloud synchronizace)
-      try {
-        const firestoreData = {
-          castka: novyVydaj.castka,
-          datum: novyVydaj.datum,
-          kategorie: novyVydaj.kategorie,
-          dodavatel: novyVydaj.dodavatel
-        };
-        
-        const firestoreId = await FirestoreService.ulozVydaj(firestoreData);
-        
-        // Označení jako synchronizované v AsyncStorage
-        novyVydaj.firestoreId = firestoreId;
-        const aktualizovaneVydaje = [...existujiciVydaje, novyVydaj];
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(aktualizovaneVydaje));
-      } catch (firestoreError) {
-        console.error('VYDAJE ERROR: Chyba při ukládání do Firestore:', firestoreError);
-        console.error('VYDAJE ERROR: Full error object:', JSON.stringify(firestoreError, null, 2));
-        // Data zůstávají v AsyncStorage i při chybě Firestore
-        Alert.alert('Upozornění', 'Data uložena lokálně, ale nepodařilo se synchronizovat s cloudem');
-      }
+        dodavatel: data.dodavatel.trim()
+      });
 
       // Uložíme dodavatele do seznamu pro budoucí návrhy
       await ulozNovehoDodavatele(data.dodavatel.trim());
@@ -337,30 +287,6 @@ export const useVydaje = (): UseVydajeReturn => {
         kategorie: undefined as any,
         isLoading: false,
       }));
-
-      // Okamžitá aktualizace UI - přepočítání ročních výdajů
-      const aktualizovaneVydaje = [...existujiciVydaje, novyVydaj];
-      const rocniVydaje = aktualizovaneVydaje.filter(vydaj => {
-        const datum = new Date(vydaj.datum);
-        return datum.getFullYear() === new Date().getFullYear();
-      });
-
-      const zbozi = rocniVydaje
-        .filter(vydaj => vydaj.kategorie === KategorieVydaju.ZBOZI)
-        .reduce((sum, vydaj) => sum + vydaj.castka, 0);
-
-      const provoz = rocniVydaje
-        .filter(vydaj => vydaj.kategorie === KategorieVydaju.PROVOZ)
-        .reduce((sum, vydaj) => sum + vydaj.castka, 0);
-
-      setState(prev => ({
-        ...prev,
-        rocniVydaje: {
-          zbozi,
-          provoz,
-          celkem: zbozi + provoz,
-        },
-      }));
       
       Alert.alert('Úspěch', 'Výdaj byl úspěšně uložen');
     } catch (error) {
@@ -368,88 +294,48 @@ export const useVydaje = (): UseVydajeReturn => {
       Alert.alert('Chyba', 'Nepodařilo se uložit výdaj');
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [nactiRocniVydaje, ulozNovehoDodavatele]);
+  }, [ulozNovehoDodavatele]);
 
   // Funkce pro editaci výdaje
   const editovatVydaj = useCallback(async (editedVydaj: Vydaj) => {
+    if (!editedVydaj.firestoreId) {
+      Alert.alert('Chyba', 'Záznam nemá Firestore ID');
+      return;
+    }
+
     try {
-      const existujiciData = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!existujiciData) {
-        throw new Error('Žádné výdaje k editaci');
-      }
-
-      const vydajeData: Vydaj[] = JSON.parse(existujiciData);
-      const vydajIndex = vydajeData.findIndex(v => v.id === editedVydaj.id);
-      
-      if (vydajIndex === -1) {
-        throw new Error('Výdaj nebyl nalezen');
-      }
-
-      // Aktualizace v AsyncStorage
-      vydajeData[vydajIndex] = editedVydaj;
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(vydajeData));
-
-      // Aktualizace v Firestore, pokud má firestoreId
-      if (editedVydaj.firestoreId) {
-        try {
-          const firestoreData = {
-            castka: editedVydaj.castka,
-            datum: editedVydaj.datum,
-            kategorie: editedVydaj.kategorie,
-            dodavatel: editedVydaj.dodavatel
-          };
-          
-          await FirestoreService.aktualizujVydaj(editedVydaj.firestoreId, firestoreData);
-        } catch (firestoreError) {
-          console.error('Chyba při aktualizaci v Firestore:', firestoreError);
-          // Pokračujeme i při chybě Firestore
-        }
-      }
-
-      // Aktualizace ročních výdajů
-      await nactiRocniVydaje();
-      
+      await FirestoreService.aktualizujVydaj(editedVydaj.firestoreId, {
+        castka: editedVydaj.castka,
+        datum: editedVydaj.datum,
+        kategorie: editedVydaj.kategorie,
+        dodavatel: editedVydaj.dodavatel
+      });
+      // Real-time listener automaticky aktualizuje UI
       Alert.alert('Úspěch', 'Výdaj byl úspěšně upraven');
     } catch (error) {
       console.error('Chyba při editaci výdaje:', error);
       Alert.alert('Chyba', 'Nepodařilo se upravit výdaj');
       throw error;
     }
-  }, [nactiRocniVydaje]);
+  }, []);
 
   // Funkce pro smazání výdaje
   const smazatVydaj = useCallback(async (vydaj: Vydaj) => {
+    if (!vydaj.firestoreId) {
+      Alert.alert('Chyba', 'Záznam nemá Firestore ID');
+      return;
+    }
+
     try {
-      const existujiciData = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!existujiciData) {
-        throw new Error('Žádné výdaje k smazání');
-      }
-
-      const vydajeData: Vydaj[] = JSON.parse(existujiciData);
-      const aktualizovanaData = vydajeData.filter(v => v.id !== vydaj.id);
-      
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(aktualizovanaData));
-
-      // Smazání z Firestore, pokud má firestoreId
-      if (vydaj.firestoreId) {
-        try {
-          await FirestoreService.smazDokument(FIRESTORE_COLLECTIONS.VYDAJE, vydaj.firestoreId);
-        } catch (firestoreError) {
-          console.error('Chyba při mazání z Firestore:', firestoreError);
-          // Pokračujeme i při chybě Firestore
-        }
-      }
-
-      // Aktualizace ročních výdajů
-      await nactiRocniVydaje();
-      
+      await FirestoreService.smazVydaj(vydaj.firestoreId);
+      // Real-time listener automaticky aktualizuje UI
       Alert.alert('Úspěch', 'Výdaj byl úspěšně smazán');
     } catch (error) {
       console.error('Chyba při mazání výdaje:', error);
       Alert.alert('Chyba', 'Nepodařilo se smazat výdaj');
       throw error;
     }
-  }, [nactiRocniVydaje]);
+  }, []);
 
   const handleDatePickerVisibilityChange = useCallback((isVisible: boolean) => {
     setState(prev => ({ ...prev, isDatePickerVisible: isVisible }));
@@ -461,20 +347,13 @@ export const useVydaje = (): UseVydajeReturn => {
 
   const smazatPosledniVydaj = useCallback(async () => {
     try {
-      const existujiciData = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!existujiciData) {
-        Alert.alert('Info', 'Žádné výdaje k odstranění');
-        return;
-      }
-
-      const vydajeData: Vydaj[] = JSON.parse(existujiciData);
-      if (vydajeData.length === 0) {
+      if (vsechnyVydaje.length === 0) {
         Alert.alert('Info', 'Žádné výdaje k odstranění');
         return;
       }
 
       // Seřadíme podle data a vezmeme poslední (nejnovější) záznam
-      const serazeneData = [...vydajeData].sort((a, b) => 
+      const serazeneData = [...vsechnyVydaje].sort((a, b) => 
         new Date(b.datum).getTime() - new Date(a.datum).getTime()
       );
       
@@ -492,22 +371,13 @@ export const useVydaje = (): UseVydajeReturn => {
             style: 'destructive',
             onPress: async () => {
               try {
-                // Odstraníme poslední záznam z AsyncStorage
-                const aktualizovanaData = vydajeData.filter(v => v.id !== posledniVydaj.id);
-                await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(aktualizovanaData));
-                
-                // Odstraníme také z Firebase, pokud má firestoreId
                 if (posledniVydaj.firestoreId) {
-                  try {
-                    await FirestoreService.smazDokument('vydaje', posledniVydaj.firestoreId);
-                  } catch (firebaseError) {
-                    console.error('Chyba při mazání z Firebase:', firebaseError);
-                    // Pokračujeme i při chybě Firebase
-                  }
+                  await FirestoreService.smazVydaj(posledniVydaj.firestoreId);
+                  // Real-time listener automaticky aktualizuje UI
+                  Alert.alert('Úspěch', 'Poslední výdaj byl odstraněn');
+                } else {
+                  Alert.alert('Chyba', 'Záznam nemá Firestore ID');
                 }
-                
-                Alert.alert('Úspěch', 'Poslední výdaj byl odstraněn');
-                await nactiRocniVydaje();
               } catch (error) {
                 console.error('Chyba při mazání výdaje:', error);
                 Alert.alert('Chyba', 'Nepodařilo se odstranit výdaj');
@@ -520,7 +390,21 @@ export const useVydaje = (): UseVydajeReturn => {
       console.error('Chyba při načítání výdajů:', error);
       Alert.alert('Chyba', 'Nepodařilo se načíst výdaje');
     }
-  }, [nactiRocniVydaje]);
+  }, [vsechnyVydaje]);
+
+  // Placeholder pro nactiRocniVydaje - zachováno pro kompatibilitu
+  const nactiRocniVydaje = useCallback(async () => {
+    // Real-time listener automaticky načítá data
+    // Tato funkce je pouze pro kompatibilitu
+  }, []);
+
+  // Automatická aktualizace při návratu na obrazovku - placeholder
+  useFocusEffect(
+    useCallback(() => {
+      // Real-time listener automaticky aktualizuje data
+      // Tato funkce je pouze pro kompatibilitu
+    }, [])
+  );
 
   return {
     state,
@@ -542,4 +426,4 @@ export const useVydaje = (): UseVydajeReturn => {
       nactiRocniVydaje,
     },
   };
-}; 
+};

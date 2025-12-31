@@ -8,9 +8,11 @@ interface JinePrijmySeznamProps {
     popis: string;
     datum: string;
     castka: number;
+    firestoreId?: string;
   }>;
   formatujCastku: (castka: number) => string;
   formatujDatumZeStringu: (datum: string) => string;
+  onEdit?: (prijem: any) => void;
   isCollapsible?: boolean;
   isVisible?: boolean;
   onToggleVisibility?: () => void;
@@ -23,6 +25,7 @@ export const JinePrijmySeznam: React.FC<JinePrijmySeznamProps> = ({
   jinePrijmy,
   formatujCastku,
   formatujDatumZeStringu,
+  onEdit,
   isCollapsible = false,
   isVisible = true,
   onToggleVisibility,
@@ -51,17 +54,22 @@ export const JinePrijmySeznam: React.FC<JinePrijmySeznamProps> = ({
           ) : (
             <View style={styles.jinePrijmySeznam}>
               {jinePrijmy.map((prijem) => (
-                <View key={prijem.id} style={styles.jinyPrijemRadek}>
+                <TouchableOpacity
+                  key={prijem.id}
+                  style={styles.jinyPrijemRadek}
+                  onLongPress={() => onEdit && onEdit(prijem)}
+                  delayLongPress={500}
+                >
                   <View style={styles.popisContainer}>
                     <Text style={styles.popisText}>{prijem.popis || 'Bez popisu'}</Text>
                     <Text style={styles.datumText}>{formatujDatumZeStringu(prijem.datum)}</Text>
                   </View>
                   <Text style={styles.castkaText}>{formatujCastku(prijem.castka)}</Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
-          <Text style={styles.napoveda}>Dlouhým stisknutím smažete příjem</Text>
+          <Text style={styles.napoveda}>Dlouhým stisknutím upravíte příjem</Text>
         </>
       )}
     </View>

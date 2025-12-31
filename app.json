@@ -15,7 +15,7 @@
       "supportsTablet": true,
       "icon": "./assets/poznamky-icon.png",
       "bundleIdentifier": "com.mkbuild.PoznamkyApp",
-      "buildNumber": "8",
+      "buildNumber": "9",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -26,9 +26,12 @@
         "foregroundImage": "./assets/poznamky-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "versionCode": 8,
-      "edgeToEdgeEnabled": true
+      "versionCode": 9,
+      "package": "com.mkbuild.PoznamkyApp"
     },
+    "plugins": [
+      "./app.plugin.js"
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },

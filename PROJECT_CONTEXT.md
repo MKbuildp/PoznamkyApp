@@ -14,9 +14,9 @@
 ### Technologie:
 - React Native 0.81.5 + Expo SDK 54
 - TypeScript 5.9.2
-- Firebase Firestore (synchronizace dat) - **PLNĚ INTEGROVÁNO**
+- Firebase Firestore (synchronizace dat) - **REAL-TIME SYNCHRONIZACE**
 - React Navigation 6
-- AsyncStorage (lokální úložiště)
+- AsyncStorage (pouze pro migraci, data primárně v Firebase)
 
 ---
 
@@ -59,20 +59,20 @@ src/
 ```
 
 ### 2.3 Datový model
-**Firestore kolekce:**
-- `prijmy` - Koloniál příjmy s kategoriemi
-- `vydaje` - Výdaje podle dodavatelů  
-- `domacnost` - Domácí výdaje (jídlo, pravidelné, jiné)
-- `waxdream_prijmy` - WaxDream příjmy (nový - **PLNĚ INTEGROVÁNO**)
-- `waxdream_vydaje` - WaxDream výdaje (nový - **PLNĚ INTEGROVÁNO**)
+**Firestore kolekce (PRIMÁRNÍ ZDROJ DAT):**
+- `prijmy` - Koloniál příjmy s kategoriemi (**REAL-TIME**)
+- `vydaje` - Výdaje podle dodavatelů (**REAL-TIME**)
+- `domacnost` - Domácí výdaje (jídlo, pravidelné, jiné) (**REAL-TIME**)
+- `waxdream_prijmy` - WaxDream příjmy (**REAL-TIME**)
+- `waxdream_vydaje` - WaxDream výdaje (**REAL-TIME**)
 
-**AsyncStorage klíče:**
-- `seznamPrijmuData_v2` - Koloniál příjmy
-- `seznamVydajuData_v1` - Výdaje
-- `domacnostVydajeData_v1` - Domácí výdaje
-- `waxdream_prijmy` - WaxDream příjmy (nový - **PLNĚ INTEGROVÁNO**)
-- `waxdream_vydaje` - WaxDream výdaje (nový - **PLNĚ INTEGROVÁNO**)
-- `waxdream_vybrany_rok` - WaxDream vybraný rok (nový)
+**AsyncStorage klíče (POUZE PRO MIGRACI):**
+- `seznamPrijmuData_v2` - Koloniál příjmy (deprecated, data v Firebase)
+- `seznamVydajuData_v1` - Výdaje (deprecated, data v Firebase)
+- `domacnostVydajeData_v1` - Domácí výdaje (deprecated, data v Firebase)
+- `waxdream_prijmy` - WaxDream příjmy (deprecated, data v Firebase)
+- `waxdream_vydaje` - WaxDream výdaje (deprecated, data v Firebase)
+- `waxdream_vybrany_rok` - WaxDream vybraný rok (lokální preference)
 
 ---
 
@@ -96,10 +96,19 @@ const TAB_NAMES = {
 ```
 
 ### 3.2 Synchronizace dat
-- **useFirestoreSync.ts** - Hook pro synchronizaci AsyncStorage ↔ Firestore (**PLNĚ INTEGROVÁNO**)
-- **FirestoreService.ts** - Služba pro CRUD operace s Firestore (**ROZŠÍŘENO O WAXDREAM**)
-- **Automatická synchronizace** při spuštění aplikace
-- **WaxDream Firebase integrace** - Kompletní CRUD operace s Firebase
+- **useFirestoreRealtime.ts** - Hook pro real-time synchronizaci z Firestore (**PRIMÁRNÍ ZDROJ**)
+  - Univerzální hook pro real-time načítání kolekcí z Firestore
+  - Podporuje filtrování (`whereClause`), řazení (`orderBy`), transformaci dat
+  - Automatické odpojení listenerů při unmount komponenty
+  - Loading a error stavy
+  - Používá `onSnapshot` pro automatickou aktualizaci UI
+- **FirestoreService.ts** - Služba pro CRUD operace s Firestore
+  - Všechny `nacti*()` metody odstraněny (data se načítají přes real-time listenery)
+  - Specifické `smaz*()` metody pro každou kolekci
+  - Všechny operace přímo do Firestore
+- **Real-time listenery** - Automatická aktualizace UI při změnách v Firestore
+- **Offline persistence** - Memory cache pro React Native prostředí
+- **useFirestoreSync.ts** - Deprecated, používá se pouze pro migraci dat
 
 ### 3.3 Komponenty
 
@@ -232,10 +241,11 @@ const TAB_NAMES = {
 ### 3.4 Obrazovky
 
 #### PrehledScreen (Přehled)
-- Celkové příjmy a výdaje
-- Bilance s kategoriemi (Zboží, Provoz)
-- Měsíční přehled tabulka
-- Pull-to-refresh synchronizace
+- **Filtrování podle roku**: Výdaje, Příjmy a Bilance zobrazují data pouze pro vybraný rok
+- **Synchronizace s přepínačem**: Změna roku v Ročním přehledu automaticky aktualizuje všechny hodnoty
+- Bilance s kategoriemi (Zboží, Provoz) pro vybraný rok
+- Měsíční přehled tabulka s přepínačem roků
+- **Real-time synchronizace** - automatická aktualizace při změnách dat
 
 #### VydajePrehledScreenEmpty (Výdaje - přesměrování)
 - Informační obrazovka s oznámením o přesunu
@@ -356,10 +366,11 @@ const TAB_NAMES = {
 
 ### 5.3 Firebase konfigurace
 - **Project ID**: `poznamky-bdabf`
-- **Offline persistence** povolena
-- **Automatická synchronizace** při připojení
-- **WaxDream kolekce**: `waxdream_prijmy`, `waxdream_vydaje` (**PLNĚ INTEGROVÁNO**)
-- **Kompletní CRUD**: Všechny operace synchronizovány s Firebase
+- **Offline persistence**: Memory cache (vhodné pro React Native)
+- **Real-time synchronizace**: Všechny obrazovky používají `onSnapshot` listenery
+- **Automatická aktualizace UI**: Změny v Firestore se okamžitě projeví v aplikaci
+- **WaxDream kolekce**: `waxdream_prijmy`, `waxdream_vydaje` (**REAL-TIME**)
+- **Kompletní CRUD**: Všechny operace přímo do Firestore, real-time aktualizace
 
 ---
 
@@ -389,10 +400,11 @@ npm run clean
 ## 7. KNOWN ISSUES & LIMITATIONS
 
 ### 7.1 Aktuální omezení
-- **Offline režim**: Data se ukládají lokálně, synchronizace při připojení (**PLNĚ FUNKČNÍ**)
+- **Offline režim**: Memory cache (data se ukládají pouze v paměti během běhu aplikace)
 - **Jednodužší validace**: Základní validace formulářů
-- **Žádné uživatelské účty**: Všechna data jsou lokální
-- **Firebase integrace**: **KOMPLETNÍ** - všechny taby synchronizovány
+- **Žádné uživatelské účty**: Všechna data jsou veřejně přístupná v Firestore
+- **Firebase integrace**: **REAL-TIME** - všechny taby používají real-time listenery
+- **AsyncStorage**: Používá se pouze pro migraci starých dat, není primární zdroj
 
 ### 7.2 Plánované vylepšení
 - Uživatelské účty a autentizace
@@ -405,6 +417,68 @@ npm run clean
 ## 8. BUILD_FAILURE_HISTORY
 
 ### 8.1 Nedávné změny
+
+- **2024-12-20**: **PŘECHOD NA REAL-TIME FIREBASE SYNCHRONIZACI** - Kompletní refaktoring datového modelu
+  - **Problém**: Aplikace používala hybridní model AsyncStorage + Firestore s jednorázovým načítáním dat
+  - **Řešení**: Přechod na čistý real-time model s Firestore jako jediným zdrojem dat
+  - **useFirestoreRealtime hook**: Vytvořen univerzální hook pro real-time synchronizaci kolekcí
+    - Podporuje filtrování (`whereClause`), řazení (`orderBy`), transformaci dat
+    - Automatické odpojení listenerů při unmount komponenty
+    - Loading a error stavy
+  - **FirestoreService refaktoring**: 
+    - Odstraněny všechny `nacti*()` metody (data se načítají přes real-time listenery)
+    - Přidány specifické `smaz*()` metody pro každou kolekci
+    - Všechny CRUD operace přímo do Firestore
+  - **Aktualizované hooky**:
+    - `useDomacnost.ts` - real-time listener pro domácí výdaje
+    - `usePrijmyVydaje.ts` - real-time listener pro příjmy
+    - `useWaxDream.ts` - real-time listenery pro příjmy i výdaje
+    - `useObchodPrehled.ts` - real-time listenery pro Koloniál
+    - `usePrehled.ts` - real-time listenery pro celkový přehled
+    - `usePrehledTabulka.ts` - real-time listenery pro měsíční přehled
+  - **Aktualizované obrazovky**:
+    - Odstraněn `useFirestoreSync` ze všech obrazovek
+    - Pull-to-refresh pouze pro vizuální feedback (data se aktualizují automaticky)
+    - Real-time listenery automaticky aktualizují UI při změnách
+  - **Firebase konfigurace**:
+    - Aktualizováno z `enableIndexedDbPersistence()` na `initializeFirestore` s `memoryLocalCache`
+    - Memory cache je vhodná pro React Native (IndexedDB není podporována)
+    - Offline persistence funguje v paměti během běhu aplikace
+  - **Migrační skript**: Vytvořen `migrateToFirestore.ts` pro jednorázový přesun dat z AsyncStorage
+  - **Výsledek**: 
+    - Všechny změny se okamžitě synchronizují mezi zařízeními
+    - UI se automaticky aktualizuje bez nutnosti pull-to-refresh
+    - Jednodušší architektura bez duplikace dat
+    - Lepší výkon díky real-time listenerům
+
+- **2024-12-20**: **OPRAVA EDITACE JINÝCH PŘÍJMŮ** - Implementace editace záznamů kategorie "Jiné"
+  - **Problém**: Záznamy v kategorii "Jiné příjmy" nešly editovat
+  - **Řešení**: 
+    - Vytvořeno modální okno `EditJinyPrijemModal.tsx` pro editaci jiných příjmů
+    - Přidána funkce `editovatJinyPrijem` do `useObchodPrehled.ts`
+    - Aktualizována komponenta `JinePrijmySeznam.tsx` - přidán `onLongPress` handler
+    - Propojeno modální okno v `PrijmyVydajeScreen.tsx`
+  - **Funkce**: Dlouhý stisk na záznam → modální okno s editací částky, data a popisu
+  - **Výsledek**: Uživatelé mohou nyní editovat záznamy v kategorii "Jiné příjmy"
+
+- **2024-12-20**: **AKTUALIZACE OBRAZOVKY PŘEHLED - FILTROVÁNÍ PODLE ROKU**
+  - **Problém**: Výdaje, Příjmy a Bilance zobrazovaly celkové součty za všechny roky
+  - **Požadavek**: Tyto hodnoty mají zobrazovat data pouze pro vybraný rok (stejný jako v Ročním přehledu)
+  - **Řešení**:
+    - Upraven `usePrehled.ts` - přidán parametr `vybranyRok`
+    - Data se filtrují podle vybraného roku před výpočtem součtů
+    - `PrehledScreen.tsx` předává `vybranyRok` z `usePrehledTabulka` do `usePrehled`
+    - Loading state kombinuje oba hooky
+  - **Výsledek**: 
+    - Při změně roku v přepínači se automaticky aktualizují všechny hodnoty
+    - Výdaje, Příjmy a Bilance zobrazují data pouze pro vybraný rok
+    - Real-time synchronizace funguje pro oba hooky
+
+- **2024-12-20**: **OPRAVA CHYB A VAROVÁNÍ**
+  - **Chyba `isSyncing`**: Odstraněno použití nedefinované proměnné v `WaxDreamScreen.tsx`
+  - **Varování deprecace**: Aktualizována konfigurace Firestore na nový způsob (`memoryLocalCache`)
+  - **Varování IndexedDB**: Vysvětleno a opraveno - React Native nepodporuje IndexedDB, používá se memory cache
+  - **Výsledek**: Aplikace běží bez chyb a varování
 - **2024-12-19**: **OPRAVA PŘIŘAZOVÁNÍ KATEGORIÍ V DOMÁCNOSTI** - Oprava problému s nesprávným zobrazením kategorií a částek
   - **Problém**: Při vytváření nových záznamů se kategorie nepřiřazovaly správně - všechny záznamy měly oranžovou barvu jako "Jiné"
   - **Příčina**: `NovyZaznamModal` posílal stringy ('JIDLO', 'JINE', 'PRAVIDELNE', 'PRIJEM'), ale enum `KategorieDomacnostVydaju` má hodnoty ("Jídlo", "Jiné", "Pravidelné", "Příjem")

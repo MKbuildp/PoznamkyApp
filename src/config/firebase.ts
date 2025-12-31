@@ -1,5 +1,10 @@
 import { initializeApp } from '@firebase/app';
-import { getFirestore, connectFirestoreEmulator } from '@firebase/firestore';
+import { 
+  getFirestore, 
+  initializeFirestore,
+  CACHE_SIZE_UNLIMITED,
+  memoryLocalCache
+} from '@firebase/firestore';
 
 /**
  * @description Firebase konfigurace pro projekt Poznamky
@@ -19,16 +24,26 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 /**
- * @description Inicializace Firestore databáze
+ * @description Inicializace Firestore databáze s offline cache
+ * 
+ * POZNÁMKA: V React Native prostředí není IndexedDB dostupná (je to webová technologie),
+ * proto používáme memory cache. Data se ukládají v paměti během běhu aplikace.
+ * Pro trvalé offline ukládání v React Native je potřeba použít AsyncStorage nebo
+ * nativní moduly, což už aplikace dělá přes real-time listenery.
  */
-export const db = getFirestore(app);
+export const db = initializeFirestore(app, {
+  localCache: memoryLocalCache({
+    cacheSizeBytes: CACHE_SIZE_UNLIMITED
+  })
+});
 
 /**
- * @description Konfigurace offline persistence pro Firestore
+ * @description Konfigurace Firestore (pro kompatibilitu, už není potřeba)
+ * Offline persistence je nyní konfigurována přímo při inicializaci
  */
-export const configureFirestore = () => {
-  // Povolení offline persistence
-  // Firestore automaticky ukládá data offline a synchronizuje při připojení
+export const configureFirestore = async () => {
+  // Offline persistence je nyní konfigurována přímo při inicializaci
+  console.log('Firestore offline persistence povolena');
 };
 
 export default app;

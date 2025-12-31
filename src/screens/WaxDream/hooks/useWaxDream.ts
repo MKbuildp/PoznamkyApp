@@ -1,7 +1,8 @@
-/** useWaxDream - Hook pro správu dat WaxDream s AsyncStorage a Firebase */
-import { useState, useEffect, useCallback } from 'react';
+/** useWaxDream - Hook pro správu dat WaxDream s real-time Firebase synchronizací */
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FirestoreService } from '../../../services/firestoreService';
+import { useFirestoreRealtime } from '../../../hooks/useFirestoreRealtime';
+import { FirestoreService, FIRESTORE_COLLECTIONS, FirestoreWaxDreamPrijem, FirestoreWaxDreamVydaj } from '../../../services/firestoreService';
 
 // Typy pro WaxDream data
 export interface WaxDreamPrijem {
@@ -56,81 +57,112 @@ export interface WaxDreamHandlers {
   vypoctiProvozVydaje: () => number;
 }
 
-const ASYNC_STORAGE_KEYS = {
-  PRIJMY: 'waxdream_prijmy',
-  VYDAJE: 'waxdream_vydaje',
-  VYBRANY_ROK: 'waxdream_vybrany_rok',
-} as const;
+const ASYNC_STORAGE_KEY_VYBRANY_ROK = 'waxdream_vybrany_rok';
+
+/**
+ * @description Transformace Firestore dat na lokální typ pro příjmy
+ */
+const transformWaxDreamPrijem = (doc: any): WaxDreamPrijem => {
+  return {
+    id: doc.id,
+    castka: doc.castka,
+    datum: doc.datum,
+    popis: doc.popis,
+    rok: doc.rok,
+    firestoreId: doc.id
+  };
+};
+
+/**
+ * @description Transformace Firestore dat na lokální typ pro výdaje
+ */
+const transformWaxDreamVydaj = (doc: any): WaxDreamVydaj => {
+  return {
+    id: doc.id,
+    castka: doc.castka,
+    datum: doc.datum,
+    kategorie: doc.kategorie,
+    dodavatel: doc.dodavatel,
+    rok: doc.rok,
+    firestoreId: doc.id
+  };
+};
 
 export const useWaxDream = (): { state: WaxDreamState; handlers: WaxDreamHandlers } => {
-  const [state, setState] = useState<WaxDreamState>({
-    prijmy: [],
-    vydaje: [],
-    vybranyRok: new Date().getFullYear(),
-    nacitaSe: true,
+  const [vybranyRok, setVybranyRok] = useState(new Date().getFullYear());
+
+  // Real-time synchronizace příjmů z Firestore
+  const { 
+    data: firestorePrijmy, 
+    loading: prijmyNacitaSe, 
+    error: prijmyError 
+  } = useFirestoreRealtime<FirestoreWaxDreamPrijem>({
+    collectionName: FIRESTORE_COLLECTIONS.WAXDREAM_PRIJMY,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: transformWaxDreamPrijem
   });
 
-  /**
-   * @description Načte data z AsyncStorage
-   */
-  const nactiData = useCallback(async () => {
-    try {
-      setState(prev => ({ ...prev, nacitaSe: true }));
-      
-      const [prijmyData, vydajeData, vybranyRokData] = await Promise.all([
-        AsyncStorage.getItem(ASYNC_STORAGE_KEYS.PRIJMY),
-        AsyncStorage.getItem(ASYNC_STORAGE_KEYS.VYDAJE),
-        AsyncStorage.getItem(ASYNC_STORAGE_KEYS.VYBRANY_ROK),
-      ]);
+  // Real-time synchronizace výdajů z Firestore
+  const { 
+    data: firestoreVydaje, 
+    loading: vydajeNacitaSe, 
+    error: vydajeError 
+  } = useFirestoreRealtime<FirestoreWaxDreamVydaj>({
+    collectionName: FIRESTORE_COLLECTIONS.WAXDREAM_VYDAJE,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: transformWaxDreamVydaj
+  });
 
-      const prijmy: WaxDreamPrijem[] = prijmyData ? JSON.parse(prijmyData) : [];
-      const vydaje: WaxDreamVydaj[] = vydajeData ? JSON.parse(vydajeData) : [];
-      const vybranyRok = vybranyRokData ? parseInt(vybranyRokData) : new Date().getFullYear();
+  // Transformace na lokální typy
+  const prijmy: WaxDreamPrijem[] = useMemo(() => {
+    return firestorePrijmy.map(p => ({
+      id: p.id || '',
+      castka: p.castka,
+      datum: p.datum,
+      popis: p.popis,
+      rok: p.rok,
+      firestoreId: p.id
+    }));
+  }, [firestorePrijmy]);
 
-      setState({
-        prijmy,
-        vydaje,
-        vybranyRok,
-        nacitaSe: false,
-      });
-    } catch (error) {
-      console.error('Chyba při načítání dat WaxDream:', error);
-      setState(prev => ({ ...prev, nacitaSe: false }));
-    }
+  const vydaje: WaxDreamVydaj[] = useMemo(() => {
+    return firestoreVydaje.map(v => ({
+      id: v.id || '',
+      castka: v.castka,
+      datum: v.datum,
+      kategorie: v.kategorie,
+      dodavatel: v.dodavatel,
+      rok: v.rok,
+      firestoreId: v.id
+    }));
+  }, [firestoreVydaje]);
+
+  // Načtení vybraného roku z AsyncStorage (pouze pro UI preferenci)
+  useEffect(() => {
+    const nactiVybranyRok = async () => {
+      try {
+        const vybranyRokData = await AsyncStorage.getItem(ASYNC_STORAGE_KEY_VYBRANY_ROK);
+        if (vybranyRokData) {
+          setVybranyRok(parseInt(vybranyRokData));
+        }
+      } catch (error) {
+        console.error('Chyba při načítání vybraného roku:', error);
+      }
+    };
+    nactiVybranyRok();
   }, []);
 
-  /**
-   * @description Uloží příjmy do AsyncStorage
-   */
-  const ulozPrijmy = useCallback(async (prijmy: WaxDreamPrijem[]) => {
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEYS.PRIJMY, JSON.stringify(prijmy));
-    } catch (error) {
-      console.error('Chyba při ukládání příjmů WaxDream:', error);
-    }
-  }, []);
+  // Error handling
+  if (prijmyError) {
+    console.error('Firestore error v useWaxDream (příjmy):', prijmyError);
+  }
+  if (vydajeError) {
+    console.error('Firestore error v useWaxDream (výdaje):', vydajeError);
+  }
 
-  /**
-   * @description Uloží výdaje do AsyncStorage
-   */
-  const ulozVydaje = useCallback(async (vydaje: WaxDreamVydaj[]) => {
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEYS.VYDAJE, JSON.stringify(vydaje));
-    } catch (error) {
-      console.error('Chyba při ukládání výdajů WaxDream:', error);
-    }
-  }, []);
-
-  /**
-   * @description Uloží vybraný rok do AsyncStorage
-   */
-  const ulozVybranyRok = useCallback(async (rok: number) => {
-    try {
-      await AsyncStorage.setItem(ASYNC_STORAGE_KEYS.VYBRANY_ROK, rok.toString());
-    } catch (error) {
-      console.error('Chyba při ukládání vybraného roku WaxDream:', error);
-    }
-  }, []);
+  const nacitaSe = prijmyNacitaSe || vydajeNacitaSe;
 
   // Handlers
   const handlers: WaxDreamHandlers = {
@@ -138,39 +170,28 @@ export const useWaxDream = (): { state: WaxDreamState; handlers: WaxDreamHandler
      * @description Přidá nový příjem
      */
     pridatPrijem: async (castka: number, datum: Date, popis: string) => {
-      const novyPrijem: WaxDreamPrijem = {
-        id: Date.now().toString(),
-        castka,
-        datum: datum.toISOString(),
-        popis,
-        rok: datum.getFullYear(),
-      };
-
-      // Synchronizace s Firebase
       try {
-        const firestoreId = await FirestoreService.ulozWaxDreamPrijem({
-          castka: novyPrijem.castka,
-          datum: novyPrijem.datum,
-          popis: novyPrijem.popis,
-          rok: novyPrijem.rok
+        // Přímé uložení do Firestore (real-time listener automaticky aktualizuje UI)
+        await FirestoreService.ulozWaxDreamPrijem({
+          castka,
+          datum: datum.toISOString(),
+          popis,
+          rok: datum.getFullYear()
         });
-        novyPrijem.firestoreId = firestoreId;
       } catch (error) {
-        console.error('Chyba při synchronizaci příjmu s Firebase:', error);
-        // Pokračujeme i při chybě - data se uloží lokálně
+        console.error('Chyba při ukládání příjmu do Firestore:', error);
+        throw error;
       }
-
-      const novePrijmy = [...state.prijmy, novyPrijem];
-      setState(prev => ({ ...prev, prijmy: novePrijmy }));
-      await ulozPrijmy(novePrijmy);
     },
 
-  /**
-   * @description Upraví existující příjem
-   */
-  upravitPrijem: async (upravenyPrijem: WaxDreamPrijem) => {
-    // Synchronizace s Firebase
-    if (upravenyPrijem.firestoreId) {
+    /**
+     * @description Upraví existující příjem
+     */
+    upravitPrijem: async (upravenyPrijem: WaxDreamPrijem) => {
+      if (!upravenyPrijem.firestoreId) {
+        throw new Error('Záznam nemá Firestore ID');
+      }
+
       try {
         await FirestoreService.aktualizujWaxDreamPrijem(upravenyPrijem.firestoreId, {
           castka: upravenyPrijem.castka,
@@ -178,77 +199,57 @@ export const useWaxDream = (): { state: WaxDreamState; handlers: WaxDreamHandler
           popis: upravenyPrijem.popis,
           rok: upravenyPrijem.rok
         });
+        // Real-time listener automaticky aktualizuje UI
       } catch (error) {
-        console.error('Chyba při aktualizaci příjmu v Firebase:', error);
-        // Pokračujeme i při chybě
+        console.error('Chyba při aktualizaci příjmu v Firestore:', error);
+        throw error;
       }
-    }
+    },
 
-    const novePrijmy = state.prijmy.map(p => 
-      p.id === upravenyPrijem.id ? upravenyPrijem : p
-    );
-    setState(prev => ({ ...prev, prijmy: novePrijmy }));
-    await ulozPrijmy(novePrijmy);
-  },
+    /**
+     * @description Smaže příjem
+     */
+    smazatPrijem: async (prijem: WaxDreamPrijem) => {
+      if (!prijem.firestoreId) {
+        throw new Error('Záznam nemá Firestore ID');
+      }
 
-  /**
-   * @description Smaže příjem
-   */
-  smazatPrijem: async (prijem: WaxDreamPrijem) => {
-    // Synchronizace s Firebase
-    if (prijem.firestoreId) {
       try {
         await FirestoreService.smazWaxDreamPrijem(prijem.firestoreId);
+        // Real-time listener automaticky aktualizuje UI
       } catch (error) {
-        console.error('Chyba při mazání příjmu z Firebase:', error);
-        // Pokračujeme i při chybě
+        console.error('Chyba při mazání příjmu z Firestore:', error);
+        throw error;
       }
-    }
-
-    const novePrijmy = state.prijmy.filter(p => p.id !== prijem.id);
-    setState(prev => ({ ...prev, prijmy: novePrijmy }));
-    await ulozPrijmy(novePrijmy);
-  },
+    },
 
     /**
      * @description Přidá nový výdaj
      */
     pridatVydaj: async (castka: number, datum: Date, kategorie: 'MATERIAL' | 'PROVOZ', dodavatel: string) => {
-      const novyVydaj: WaxDreamVydaj = {
-        id: Date.now().toString(),
-        castka,
-        datum: datum.toISOString(),
-        kategorie,
-        dodavatel,
-        rok: datum.getFullYear(),
-      };
-
-      // Synchronizace s Firebase
       try {
-        const firestoreId = await FirestoreService.ulozWaxDreamVydaj({
-          castka: novyVydaj.castka,
-          datum: novyVydaj.datum,
-          kategorie: novyVydaj.kategorie,
-          dodavatel: novyVydaj.dodavatel,
-          rok: novyVydaj.rok
+        // Přímé uložení do Firestore (real-time listener automaticky aktualizuje UI)
+        await FirestoreService.ulozWaxDreamVydaj({
+          castka,
+          datum: datum.toISOString(),
+          kategorie,
+          dodavatel,
+          rok: datum.getFullYear()
         });
-        novyVydaj.firestoreId = firestoreId;
       } catch (error) {
-        console.error('Chyba při synchronizaci výdaje s Firebase:', error);
-        // Pokračujeme i při chybě - data se uloží lokálně
+        console.error('Chyba při ukládání výdaje do Firestore:', error);
+        throw error;
       }
-
-      const noveVydaje = [...state.vydaje, novyVydaj];
-      setState(prev => ({ ...prev, vydaje: noveVydaje }));
-      await ulozVydaje(noveVydaje);
     },
 
-  /**
-   * @description Upraví existující výdaj
-   */
-  upravitVydaj: async (upravenyVydaj: WaxDreamVydaj) => {
-    // Synchronizace s Firebase
-    if (upravenyVydaj.firestoreId) {
+    /**
+     * @description Upraví existující výdaj
+     */
+    upravitVydaj: async (upravenyVydaj: WaxDreamVydaj) => {
+      if (!upravenyVydaj.firestoreId) {
+        throw new Error('Záznam nemá Firestore ID');
+      }
+
       try {
         await FirestoreService.aktualizujWaxDreamVydaj(upravenyVydaj.firestoreId, {
           castka: upravenyVydaj.castka,
@@ -257,51 +258,47 @@ export const useWaxDream = (): { state: WaxDreamState; handlers: WaxDreamHandler
           dodavatel: upravenyVydaj.dodavatel,
           rok: upravenyVydaj.rok
         });
+        // Real-time listener automaticky aktualizuje UI
       } catch (error) {
-        console.error('Chyba při aktualizaci výdaje v Firebase:', error);
-        // Pokračujeme i při chybě
+        console.error('Chyba při aktualizaci výdaje v Firestore:', error);
+        throw error;
       }
-    }
+    },
 
-    const noveVydaje = state.vydaje.map(v => 
-      v.id === upravenyVydaj.id ? upravenyVydaj : v
-    );
-    setState(prev => ({ ...prev, vydaje: noveVydaje }));
-    await ulozVydaje(noveVydaje);
-  },
+    /**
+     * @description Smaže výdaj
+     */
+    smazatVydaj: async (vydaj: WaxDreamVydaj) => {
+      if (!vydaj.firestoreId) {
+        throw new Error('Záznam nemá Firestore ID');
+      }
 
-  /**
-   * @description Smaže výdaj
-   */
-  smazatVydaj: async (vydaj: WaxDreamVydaj) => {
-    // Synchronizace s Firebase
-    if (vydaj.firestoreId) {
       try {
         await FirestoreService.smazWaxDreamVydaj(vydaj.firestoreId);
+        // Real-time listener automaticky aktualizuje UI
       } catch (error) {
-        console.error('Chyba při mazání výdaje z Firebase:', error);
-        // Pokračujeme i při chybě
+        console.error('Chyba při mazání výdaje z Firestore:', error);
+        throw error;
       }
-    }
-
-    const noveVydaje = state.vydaje.filter(v => v.id !== vydaj.id);
-    setState(prev => ({ ...prev, vydaje: noveVydaje }));
-    await ulozVydaje(noveVydaje);
-  },
+    },
 
     /**
      * @description Změní vybraný rok
      */
     zmenitRok: (rok: number) => {
-      setState(prev => ({ ...prev, vybranyRok: rok }));
-      ulozVybranyRok(rok);
+      setVybranyRok(rok);
+      // Uložení do AsyncStorage pouze pro UI preferenci
+      AsyncStorage.setItem(ASYNC_STORAGE_KEY_VYBRANY_ROK, rok.toString()).catch(error => {
+        console.error('Chyba při ukládání vybraného roku:', error);
+      });
     },
 
     /**
-     * @description Načte data z AsyncStorage
+     * @description Načte data - placeholder pro kompatibilitu
      */
     nactiData: async () => {
-      await nactiData();
+      // Real-time listener automaticky načítá data
+      // Tato funkce je pouze pro kompatibilitu
     },
 
     /**
@@ -313,8 +310,8 @@ export const useWaxDream = (): { state: WaxDreamState; handlers: WaxDreamHandler
      * @description Vypočítá celkové příjmy pro vybraný rok
      */
     vypoctiCelkovePrijmy: () => {
-      return state.prijmy
-        .filter(prijem => prijem.rok === state.vybranyRok)
+      return prijmy
+        .filter(prijem => prijem.rok === vybranyRok)
         .reduce((sum, prijem) => sum + prijem.castka, 0);
     },
 
@@ -322,8 +319,8 @@ export const useWaxDream = (): { state: WaxDreamState; handlers: WaxDreamHandler
      * @description Vypočítá celkové výdaje pro vybraný rok
      */
     vypoctiCelkoveVydaje: () => {
-      return state.vydaje
-        .filter(vydaj => vydaj.rok === state.vybranyRok)
+      return vydaje
+        .filter(vydaj => vydaj.rok === vybranyRok)
         .reduce((sum, vydaj) => sum + vydaj.castka, 0);
     },
 
@@ -331,17 +328,17 @@ export const useWaxDream = (): { state: WaxDreamState; handlers: WaxDreamHandler
      * @description Vypočítá bilanci pro vybraný rok
      */
     vypoctiBilance: () => {
-      const prijmy = handlers.vypoctiCelkovePrijmy();
-      const vydaje = handlers.vypoctiCelkoveVydaje();
-      return prijmy - vydaje;
+      const prijmySum = handlers.vypoctiCelkovePrijmy();
+      const vydajeSum = handlers.vypoctiCelkoveVydaje();
+      return prijmySum - vydajeSum;
     },
 
     /**
      * @description Vypočítá výdaje za materiál pro vybraný rok
      */
     vypoctiMaterialVydaje: () => {
-      return state.vydaje
-        .filter(vydaj => vydaj.rok === state.vybranyRok && vydaj.kategorie === 'MATERIAL')
+      return vydaje
+        .filter(vydaj => vydaj.rok === vybranyRok && vydaj.kategorie === 'MATERIAL')
         .reduce((sum, vydaj) => sum + vydaj.castka, 0);
     },
 
@@ -349,16 +346,19 @@ export const useWaxDream = (): { state: WaxDreamState; handlers: WaxDreamHandler
      * @description Vypočítá výdaje za provoz pro vybraný rok
      */
     vypoctiProvozVydaje: () => {
-      return state.vydaje
-        .filter(vydaj => vydaj.rok === state.vybranyRok && vydaj.kategorie === 'PROVOZ')
+      return vydaje
+        .filter(vydaj => vydaj.rok === vybranyRok && vydaj.kategorie === 'PROVOZ')
         .reduce((sum, vydaj) => sum + vydaj.castka, 0);
     },
   };
 
-  // Načtení dat při inicializaci
-  useEffect(() => {
-    nactiData();
-  }, [nactiData]);
-
-  return { state, handlers };
+  return { 
+    state: {
+      prijmy,
+      vydaje,
+      vybranyRok,
+      nacitaSe
+    }, 
+    handlers 
+  };
 };

@@ -1,8 +1,6 @@
-import { useState, useCallback } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const PRIJMY_STORAGE_KEY = 'seznamPrijmuData_v2';
-const VYDAJE_STORAGE_KEY = 'seznamVydajuData_v1';
+import { useState, useCallback, useMemo } from 'react';
+import { useFirestoreRealtime } from '../../../hooks/useFirestoreRealtime';
+import { FIRESTORE_COLLECTIONS, FirestorePrijem, FirestoreVydaj } from '../../../services/firestoreService';
 
 interface MesicniData {
   mesic: number;
@@ -21,67 +19,95 @@ interface UsePrehledTabulkaReturn {
 }
 
 /**
- * @description Hook pro práci s daty tabulky přehledu
+ * @description Hook pro práci s daty tabulky přehledu s real-time synchronizací
  */
 export const usePrehledTabulka = (): UsePrehledTabulkaReturn => {
-  const [rocniData, setRocniData] = useState<MesicniData[]>([]);
   const [vybranyRok, setVybranyRok] = useState<number>(new Date().getFullYear());
-  const [nacitaSe, setNacitaSe] = useState<boolean>(true);
 
-  const nactiDataProRok = useCallback(async (rok: number) => {
-    setNacitaSe(true);
-    try {
-      // Načtení příjmů
-      const prijmyString = await AsyncStorage.getItem(PRIJMY_STORAGE_KEY);
-      const prijmy = prijmyString ? JSON.parse(prijmyString) : [];
+  // Real-time synchronizace příjmů z Firestore
+  const { 
+    data: firestorePrijmy, 
+    loading: prijmyNacitaSe 
+  } = useFirestoreRealtime<FirestorePrijem>({
+    collectionName: FIRESTORE_COLLECTIONS.PRIJMY,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: (doc) => ({
+      id: doc.id,
+      castka: doc.castka,
+      datum: doc.datum,
+      kategorie: doc.kategorie,
+      popis: doc.popis,
+      firestoreId: doc.id
+    })
+  });
 
-      // Načtení výdajů
-      const vydajeString = await AsyncStorage.getItem(VYDAJE_STORAGE_KEY);
-      const vydaje = vydajeString ? JSON.parse(vydajeString) : [];
+  // Real-time synchronizace výdajů z Firestore
+  const { 
+    data: firestoreVydaje, 
+    loading: vydajeNacitaSe 
+  } = useFirestoreRealtime<FirestoreVydaj>({
+    collectionName: FIRESTORE_COLLECTIONS.VYDAJE,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: (doc) => ({
+      id: doc.id,
+      castka: doc.castka,
+      datum: doc.datum,
+      kategorie: doc.kategorie,
+      dodavatel: doc.dodavatel,
+      firestoreId: doc.id
+    })
+  });
 
-      // Inicializace pole pro všechny měsíce
-      const mesicniData: MesicniData[] = Array.from({ length: 12 }, (_, index) => ({
-        mesic: index,
-        vydaje: 0,
-        prijmy: 0,
-        bilance: 0
-      }));
+  // Výpočet měsíčních dat pro vybraný rok
+  const rocniData = useMemo(() => {
+    // Inicializace pole pro všechny měsíce
+    const mesicniData: MesicniData[] = Array.from({ length: 12 }, (_, index) => ({
+      mesic: index,
+      vydaje: 0,
+      prijmy: 0,
+      bilance: 0
+    }));
 
-      // Zpracování příjmů
-      prijmy.forEach((prijem: { castka: number; datum: string }) => {
-        const datumPrijmu = new Date(prijem.datum);
-        if (datumPrijmu.getFullYear() === rok) {
-          const mesic = datumPrijmu.getMonth();
-          mesicniData[mesic].prijmy += prijem.castka;
-        }
-      });
+    // Zpracování příjmů
+    firestorePrijmy.forEach((prijem) => {
+      const datumPrijmu = new Date(prijem.datum);
+      if (datumPrijmu.getFullYear() === vybranyRok) {
+        const mesic = datumPrijmu.getMonth();
+        mesicniData[mesic].prijmy += prijem.castka;
+      }
+    });
 
-      // Zpracování výdajů
-      vydaje.forEach((vydaj: { castka: number; datum: string }) => {
-        const datumVydaje = new Date(vydaj.datum);
-        if (datumVydaje.getFullYear() === rok) {
-          const mesic = datumVydaje.getMonth();
-          mesicniData[mesic].vydaje += vydaj.castka;
-        }
-      });
+    // Zpracování výdajů
+    firestoreVydaje.forEach((vydaj) => {
+      const datumVydaje = new Date(vydaj.datum);
+      if (datumVydaje.getFullYear() === vybranyRok) {
+        const mesic = datumVydaje.getMonth();
+        mesicniData[mesic].vydaje += vydaj.castka;
+      }
+    });
 
-      // Výpočet bilance pro každý měsíc
-      mesicniData.forEach(data => {
-        data.bilance = data.prijmy - data.vydaje;
-      });
+    // Výpočet bilance pro každý měsíc
+    mesicniData.forEach(data => {
+      data.bilance = data.prijmy - data.vydaje;
+    });
 
-      setRocniData(mesicniData);
-      setNacitaSe(false);
-    } catch (error) {
-      console.error('Chyba při načítání dat tabulky:', error);
-      setNacitaSe(false);
-    }
-  }, []);
+    return mesicniData;
+  }, [firestorePrijmy, firestoreVydaje, vybranyRok]);
+
+  const nacitaSe = prijmyNacitaSe || vydajeNacitaSe;
 
   const zmenitRok = useCallback((rok: number) => {
     setVybranyRok(rok);
-    nactiDataProRok(rok);
-  }, [nactiDataProRok]);
+    // Real-time listener automaticky aktualizuje data
+  }, []);
+
+  // Placeholder funkce pro kompatibilitu
+  const nactiDataProRok = useCallback(async (rok: number) => {
+    setVybranyRok(rok);
+    // Real-time listener automaticky načítá data
+  }, []);
 
   const formatujCastku = useCallback((castka: number): string => {
     return `${Math.round(castka).toLocaleString('cs-CZ')} Kč`;

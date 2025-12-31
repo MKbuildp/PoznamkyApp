@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFirestoreRealtime } from '../../../hooks/useFirestoreRealtime';
+import { FirestoreService, FIRESTORE_COLLECTIONS, FirestoreDomacnostVydaj } from '../../../services/firestoreService';
 import { 
   DomacnostState, 
   UseDomacnostReturn, 
@@ -9,16 +9,51 @@ import {
   KategorieDomacnostVydaju,
   DenniZaznamDomacnosti 
 } from '../types/types';
-import { FirestoreService, FIRESTORE_COLLECTIONS } from '../../../services/firestoreService';
-
-const DOMACNOST_STORAGE_KEY = 'domacnostVydajeData_v1';
 
 /**
- * @description Hook pro logiku obrazovky Domácnost
+ * @description Transformace Firestore dat na lokální typ
+ */
+const transformDomacnostVydaj = (doc: any): DomacnostVydaj => {
+  return {
+    id: doc.id,
+    castka: doc.castka,
+    datum: doc.datum, // ISO string z Firestore
+    kategorie: doc.kategorie as KategorieDomacnostVydaju,
+    ucel: doc.ucel || undefined,
+    firestoreId: doc.id
+  };
+};
+
+/**
+ * @description Hook pro logiku obrazovky Domácnost s real-time Firebase synchronizací
  */
 export const useDomacnost = (): UseDomacnostReturn => {
   const [vybranyMesic, setVybranyMesic] = useState(new Date().getMonth());
   const [vybranyRok, setVybranyRok] = useState(new Date().getFullYear());
+
+  // Real-time synchronizace z Firestore
+  const { 
+    data: firestoreVydaje, 
+    loading: nacitaSe, 
+    error: firestoreError 
+  } = useFirestoreRealtime<FirestoreDomacnostVydaj>({
+    collectionName: FIRESTORE_COLLECTIONS.DOMACNOST,
+    orderByField: 'datum',
+    orderByDirection: 'desc',
+    transform: transformDomacnostVydaj
+  });
+
+  // Transformace na lokální typy
+  const vsechnyVydaje: DomacnostVydaj[] = useMemo(() => {
+    return firestoreVydaje.map(v => ({
+      id: v.id || '',
+      castka: v.castka,
+      datum: v.datum,
+      kategorie: v.kategorie,
+      ucel: v.ucel,
+      firestoreId: v.id
+    }));
+  }, [firestoreVydaje]);
 
   const [state, setState] = useState<DomacnostState>({
     // Formulář
@@ -29,7 +64,7 @@ export const useDomacnost = (): UseDomacnostReturn => {
     isDatePickerVisible: false,
     isLoading: false,
     
-    // Data
+    // Data - budou aktualizována z real-time listeneru
     denniZaznamy: [],
     mesicniCelkem: 0,
     nacitaSe: true,
@@ -116,83 +151,25 @@ export const useDomacnost = (): UseDomacnostReturn => {
     };
   }, [vybranyMesic, vybranyRok]);
 
-  /**
-   * @description Normalizace záznamů - převod starých string hodnot na enum hodnoty
-   */
-  const normalizujVydaje = useCallback((vydaje: DomacnostVydaj[]): DomacnostVydaj[] => {
-    return vydaje.map(vydaj => {
-      // Pokud je kategorie už enum hodnota, necháme ji beze změny
-      if (Object.values(KategorieDomacnostVydaju).includes(vydaj.kategorie as KategorieDomacnostVydaju)) {
-        return vydaj;
-      }
-      // Převod starého stringu na enum hodnotu
-      return {
-        ...vydaj,
-        kategorie: mapKategorieStringToEnum(vydaj.kategorie as string)
-      };
-    });
-  }, []);
+  // Zpracování dat pro UI při změně dat z real-time listeneru
+  const zpracovanaData = useMemo(() => {
+    return zpracujData(vsechnyVydaje);
+  }, [vsechnyVydaje, zpracujData]);
 
-  const nactiData = useCallback(async () => {
-    setState(s => ({ ...s, nacitaSe: true }));
-    try {
-      const jsonValue = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
-      const nacteneVydaje: DomacnostVydaj[] = jsonValue != null ? JSON.parse(jsonValue) : [];
-      
-      // Normalizace záznamů - převod starých string hodnot na enum hodnoty
-      const normalizovaneVydaje = normalizujVydaje(nacteneVydaje);
-      
-      // Pokud se některé záznamy změnily, aktualizujeme AsyncStorage
-      const byloTrebaNormalizovat = nacteneVydaje.some((v, index) => 
-        v.kategorie !== normalizovaneVydaje[index].kategorie
-      );
-      
-      if (byloTrebaNormalizovat) {
-        await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(normalizovaneVydaje));
-        // Aktualizace v Firestore, pokud mají firestoreId
-        for (const vydaj of normalizovaneVydaje) {
-          if (vydaj.firestoreId) {
-            try {
-              const firestoreData = {
-                castka: vydaj.castka,
-                datum: vydaj.datum,
-                kategorie: vydaj.kategorie,
-                ucel: vydaj.ucel || ''
-              };
-              await FirestoreService.aktualizujDomacnostVydaj(vydaj.firestoreId, firestoreData);
-            } catch (firestoreError) {
-              console.error('Chyba při aktualizaci kategorie v Firestore:', firestoreError);
-              // Pokračujeme i při chybě Firestore
-            }
-          }
-        }
-      }
-      
-      const zpracovanaData = zpracujData(normalizovaneVydaje);
-      
-      setState(s => ({
-        ...s,
-        ...zpracovanaData,
-        vsechnyVydaje: normalizovaneVydaje,
-        nacitaSe: false,
-      }));
-    } catch (e) {
-      console.error('Nepodařilo se načíst domácí výdaje z AsyncStorage:', e);
-      setState(s => ({ ...s, nacitaSe: false }));
-    }
-  }, [zpracujData, normalizujVydaje]);
+  // Aktualizace state při změně dat z real-time listeneru
+  useMemo(() => {
+    setState(prev => ({
+      ...prev,
+      ...zpracovanaData,
+      vsechnyVydaje,
+      nacitaSe,
+    }));
+  }, [zpracovanaData, vsechnyVydaje, nacitaSe]);
 
-  // Inicializační načtení dat
-  useEffect(() => {
-    nactiData();
-  }, [nactiData]);
-
-  // Automatická aktualizace při návratu na obrazovku
-  useFocusEffect(
-    useCallback(() => {
-      nactiData();
-    }, [nactiData])
-  );
+  // Error handling
+  if (firestoreError) {
+    console.error('Firestore error v useDomacnost:', firestoreError);
+  }
 
   const handleCastkaChange = useCallback((text: string) => {
     // Povolíme pouze čísla a jednu desetinnou čárku/tečku
@@ -248,47 +225,13 @@ export const useDomacnost = (): UseDomacnostReturn => {
     setState(prev => ({ ...prev, isLoading: true }));
 
     try {
-      const novyVydaj: DomacnostVydaj = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      // Přímé uložení do Firestore (real-time listener automaticky aktualizuje UI)
+      await FirestoreService.ulozDomacnostVydaj({
         castka: parseFloat(state.castka),
         datum: state.datum.toISOString(),
         kategorie: state.kategorie,
-        ucel: state.ucel.trim() || undefined,
-      };
-
-
-
-      // Uložení do AsyncStorage (lokální úložiště)
-      const existujiciVydajeString = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
-      const existujiciVydaje: DomacnostVydaj[] = existujiciVydajeString 
-        ? JSON.parse(existujiciVydajeString) 
-        : [];
-
-      const noveVydaje = [...existujiciVydaje, novyVydaj];
-      await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(noveVydaje));
-
-      // Uložení do Firestore (cloud synchronizace)
-      try {
-        const firestoreData = {
-          castka: novyVydaj.castka,
-          datum: novyVydaj.datum,
-          kategorie: novyVydaj.kategorie,
-          ucel: novyVydaj.ucel || ''
-        };
-        
-        const firestoreId = await FirestoreService.ulozDomacnostVydaj(firestoreData);
-        
-        // Označení jako synchronizované v AsyncStorage
-        novyVydaj.firestoreId = firestoreId;
-        const aktualizovaneVydajeData = noveVydaje.map(v => 
-          v.id === novyVydaj.id ? { ...v, firestoreId } : v
-        );
-        await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(aktualizovaneVydajeData));
-      } catch (firestoreError) {
-        console.error('Chyba při ukládání do Firestore:', firestoreError);
-        // Data zůstávají v AsyncStorage i při chybě Firestore
-        Alert.alert('Upozornění', 'Data uložena lokálně, ale nepodařilo se synchronizovat s cloudem');
-      }
+        ucel: state.ucel || ''
+      });
 
       // Reset formuláře
       setState(prev => ({
@@ -300,21 +243,13 @@ export const useDomacnost = (): UseDomacnostReturn => {
         isLoading: false,
       }));
 
-      // Okamžitá aktualizace UI bez čekání na načtení dat
-      const zpracovanaData = zpracujData(noveVydaje);
-      setState(s => ({
-        ...s,
-        ...zpracovanaData,
-        vsechnyVydaje: noveVydaje,
-      }));
-
       Alert.alert('Úspěch', 'Výdaj byl uložen');
     } catch (error) {
-      console.error('DOMACNOST ERROR: Chyba při ukládání výdaje:', error);
+      console.error('Chyba při ukládání výdaje:', error);
       Alert.alert('Chyba', 'Nepodařilo se uložit výdaj');
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [state.castka, state.datum, state.kategorie, state.ucel, nactiData]);
+  }, [state.castka, state.datum, state.kategorie, state.ucel]);
 
   /**
    * @description Handler pro uložení nového záznamu s daty z modálního okna
@@ -342,45 +277,13 @@ export const useDomacnost = (): UseDomacnostReturn => {
     setState(prev => ({ ...prev, isLoading: true }));
 
     try {
-      const novyVydaj: DomacnostVydaj = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      // Přímé uložení do Firestore (real-time listener automaticky aktualizuje UI)
+      await FirestoreService.ulozDomacnostVydaj({
         castka: parseFloat(data.castka),
         datum: data.datum.toISOString(),
         kategorie: kategorieEnum,
-        ucel: data.ucel?.trim() || undefined,
-      };
-
-      // Uložení do AsyncStorage (lokální úložiště)
-      const existujiciVydajeString = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
-      const existujiciVydaje: DomacnostVydaj[] = existujiciVydajeString 
-        ? JSON.parse(existujiciVydajeString) 
-        : [];
-
-      const noveVydaje = [...existujiciVydaje, novyVydaj];
-      await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(noveVydaje));
-
-      // Uložení do Firestore (cloud synchronizace)
-      try {
-        const firestoreData = {
-          castka: novyVydaj.castka,
-          datum: novyVydaj.datum,
-          kategorie: novyVydaj.kategorie,
-          ucel: novyVydaj.ucel || ''
-        };
-        
-        const firestoreId = await FirestoreService.ulozDomacnostVydaj(firestoreData);
-        
-        // Označení jako synchronizované v AsyncStorage
-        novyVydaj.firestoreId = firestoreId;
-        const aktualizovaneVydajeData = noveVydaje.map(v => 
-          v.id === novyVydaj.id ? { ...v, firestoreId } : v
-        );
-        await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(aktualizovaneVydajeData));
-      } catch (firestoreError) {
-        console.error('Chyba při ukládání do Firestore:', firestoreError);
-        // Data zůstávají v AsyncStorage i při chybě Firestore
-        Alert.alert('Upozornění', 'Data uložena lokálně, ale nepodařilo se synchronizovat s cloudem');
-      }
+        ucel: data.ucel?.trim() || ''
+      });
 
       // Reset formuláře
       setState(prev => ({
@@ -392,21 +295,13 @@ export const useDomacnost = (): UseDomacnostReturn => {
         isLoading: false,
       }));
 
-      // Okamžitá aktualizace UI bez čekání na načtení dat
-      const zpracovanaData = zpracujData(noveVydaje);
-      setState(s => ({
-        ...s,
-        ...zpracovanaData,
-        vsechnyVydaje: noveVydaje,
-      }));
-
       Alert.alert('Úspěch', 'Výdaj byl uložen');
     } catch (error) {
-      console.error('DOMACNOST ERROR: Chyba při ukládání výdaje:', error);
+      console.error('Chyba při ukládání výdaje:', error);
       Alert.alert('Chyba', 'Nepodařilo se uložit výdaj');
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [nactiData]);
+  }, []);
 
   const zmenitMesic = useCallback((posun: number) => {
     let novyMesic = vybranyMesic + posun;
@@ -454,20 +349,13 @@ export const useDomacnost = (): UseDomacnostReturn => {
 
   const smazatPosledniVydaj = useCallback(async () => {
     try {
-      const existujiciData = await AsyncStorage.getItem('domacnostVydajeData_v1');
-      if (!existujiciData) {
-        Alert.alert('Info', 'Žádné výdaje k odstranění');
-        return;
-      }
-
-      const vydajeData: DomacnostVydaj[] = JSON.parse(existujiciData);
-      if (vydajeData.length === 0) {
+      if (vsechnyVydaje.length === 0) {
         Alert.alert('Info', 'Žádné výdaje k odstranění');
         return;
       }
 
       // Seřadíme podle data a vezmeme poslední (nejnovější) záznam
-      const serazeneData = [...vydajeData].sort((a, b) => 
+      const serazeneData = [...vsechnyVydaje].sort((a, b) => 
         new Date(b.datum).getTime() - new Date(a.datum).getTime()
       );
       
@@ -486,38 +374,12 @@ export const useDomacnost = (): UseDomacnostReturn => {
             style: 'destructive',
             onPress: async () => {
               try {
-                // Odstraníme poslední záznam z AsyncStorage
-                const aktualizovanaData = vydajeData.filter(v => v.id !== posledniVydaj.id);
-                await AsyncStorage.setItem('domacnostVydajeData_v1', JSON.stringify(aktualizovanaData));
-                
-                // Odstraníme také z Firebase, pokud má firestoreId
                 if (posledniVydaj.firestoreId) {
-                  try {
-                    await FirestoreService.smazDokument(FIRESTORE_COLLECTIONS.DOMACNOST, posledniVydaj.firestoreId);
-                  } catch (firebaseError) {
-                    console.error('Chyba při mazání z Firebase:', firebaseError);
-                    // Pokračujeme i při chybě Firebase
-                  }
-                }
-                
-                Alert.alert('Úspěch', 'Poslední výdaj byl odstraněn');
-                await nactiData();
-                
-                // Explicitní aktualizace měsíčních výdajů pro UI
-                const aktualizovaneVydaje = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
-                if (aktualizovaneVydaje) {
-                  const vydaje: DomacnostVydaj[] = JSON.parse(aktualizovaneVydaje);
-                  const mesicniVydaje = vydaje.filter(v => {
-                    const datumVydaje = new Date(v.datum);
-                    return (
-                      datumVydaje.getFullYear() === vybranyRok &&
-                      datumVydaje.getMonth() === vybranyMesic
-                    );
-                  });
-                  const serazeneMesicniVydaje = mesicniVydaje.sort((a, b) => 
-                    new Date(b.datum).getTime() - new Date(a.datum).getTime()
-                  );
-                  setMesicniVydaje(serazeneMesicniVydaje);
+                  await FirestoreService.smazDomacnostVydaj(posledniVydaj.firestoreId);
+                  // Real-time listener automaticky aktualizuje UI
+                  Alert.alert('Úspěch', 'Poslední výdaj byl odstraněn');
+                } else {
+                  Alert.alert('Chyba', 'Záznam nemá Firestore ID');
                 }
               } catch (error) {
                 console.error('Chyba při mazání výdaje:', error);
@@ -531,7 +393,7 @@ export const useDomacnost = (): UseDomacnostReturn => {
       console.error('Chyba při načítání výdajů:', error);
       Alert.alert('Chyba', 'Nepodařilo se načíst výdaje');
     }
-  }, [nactiData]);
+  }, [vsechnyVydaje]);
 
   const formatujDatum = useCallback((datum: string): string => {
     const date = new Date(datum);
@@ -539,89 +401,49 @@ export const useDomacnost = (): UseDomacnostReturn => {
   }, []);
 
   const editovatVydaj = useCallback(async (editedVydaj: DomacnostVydaj) => {
+    if (!editedVydaj.firestoreId) {
+      Alert.alert('Chyba', 'Záznam nemá Firestore ID');
+      return;
+    }
+
     try {
-      // Aktualizace v AsyncStorage
-      const existujiciData = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
-      if (!existujiciData) {
-        throw new Error('Nepodařilo se načíst data pro editaci');
-      }
-
-      const vydajeData: DomacnostVydaj[] = JSON.parse(existujiciData);
-      const aktualizovanaData = vydajeData.map(v => 
-        v.id === editedVydaj.id ? editedVydaj : v
-      );
-
-      await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(aktualizovanaData));
-
-      // Aktualizace v Firestore, pokud má firestoreId
-      if (editedVydaj.firestoreId) {
-        try {
-          const firestoreData = {
-            castka: editedVydaj.castka,
-            datum: editedVydaj.datum,
-            kategorie: editedVydaj.kategorie,
-            ucel: editedVydaj.ucel || ''
-          };
-          
-          await FirestoreService.aktualizujDomacnostVydaj(editedVydaj.firestoreId, firestoreData);
-        } catch (firestoreError) {
-          console.error('Chyba při aktualizaci v Firestore:', firestoreError);
-          Alert.alert('Upozornění', 'Změny uloženy lokálně, ale nepodařilo se synchronizovat s cloudem');
-        }
-      }
-
-      // Okamžitá aktualizace UI
-      const zpracovanaData = zpracujData(aktualizovanaData);
-      setState(s => ({
-        ...s,
-        ...zpracovanaData,
-        vsechnyVydaje: aktualizovanaData,
-      }));
-
+      await FirestoreService.aktualizujDomacnostVydaj(editedVydaj.firestoreId, {
+        castka: editedVydaj.castka,
+        datum: editedVydaj.datum,
+        kategorie: editedVydaj.kategorie,
+        ucel: editedVydaj.ucel || ''
+      });
+      // Real-time listener automaticky aktualizuje UI
       Alert.alert('Úspěch', 'Výdaj byl úspěšně upraven');
     } catch (error) {
       console.error('Chyba při editaci výdaje:', error);
+      Alert.alert('Chyba', 'Nepodařilo se aktualizovat výdaj');
       throw error;
     }
-  }, [zpracujData]);
+  }, []);
 
   const smazatVydaj = useCallback(async (vydaj: DomacnostVydaj) => {
+    if (!vydaj.firestoreId) {
+      Alert.alert('Chyba', 'Záznam nemá Firestore ID');
+      return;
+    }
+
     try {
-      // Smazání z AsyncStorage
-      const existujiciData = await AsyncStorage.getItem(DOMACNOST_STORAGE_KEY);
-      if (!existujiciData) {
-        throw new Error('Nepodařilo se načíst data pro smazání');
-      }
-
-      const vydajeData: DomacnostVydaj[] = JSON.parse(existujiciData);
-      const aktualizovanaData = vydajeData.filter(v => v.id !== vydaj.id);
-
-      await AsyncStorage.setItem(DOMACNOST_STORAGE_KEY, JSON.stringify(aktualizovanaData));
-
-      // Smazání z Firestore, pokud má firestoreId
-      if (vydaj.firestoreId) {
-        try {
-          await FirestoreService.smazDokument(FIRESTORE_COLLECTIONS.DOMACNOST, vydaj.firestoreId);
-        } catch (firestoreError) {
-          console.error('Chyba při mazání z Firestore:', firestoreError);
-          // Pokračujeme i při chybě Firestore
-        }
-      }
-
-      // Okamžitá aktualizace UI
-      const zpracovanaData = zpracujData(aktualizovanaData);
-      setState(s => ({
-        ...s,
-        ...zpracovanaData,
-        vsechnyVydaje: aktualizovanaData,
-      }));
-
+      await FirestoreService.smazDomacnostVydaj(vydaj.firestoreId);
+      // Real-time listener automaticky aktualizuje UI
       Alert.alert('Úspěch', 'Výdaj byl úspěšně smazán');
     } catch (error) {
       console.error('Chyba při mazání výdaje:', error);
+      Alert.alert('Chyba', 'Nepodařilo se smazat výdaj');
       throw error;
     }
-  }, [zpracujData]);
+  }, []);
+
+  // Placeholder pro nactiData - zachováno pro kompatibilitu s existujícím kódem
+  const nactiData = useCallback(async () => {
+    // Real-time listener automaticky načítá data
+    // Tato funkce je pouze pro kompatibilitu
+  }, []);
 
   return {
     state,

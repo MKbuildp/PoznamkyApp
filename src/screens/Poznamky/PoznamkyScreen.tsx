@@ -7,7 +7,6 @@ import { NovyZaznamButton } from '../../components/NovyZaznamButton';
 import { NovyZaznamModal } from '../../components/NovyZaznamModal';
 import { useDomacnost } from './hooks/useDomacnost';
 import { KategorieDomacnostVydaju, DomacnostVydaj } from './types/types';
-import { useFirestoreSync } from '../../hooks/useFirestoreSync';
 
 /**
  * @description Obrazovka pro zadávání domácích výdajů a zobrazení tabulky
@@ -18,11 +17,8 @@ const DomacnostScreen: React.FC = () => {
   const [selectedVydaj, setSelectedVydaj] = useState<DomacnostVydaj | null>(null);
   // Stavy pro rozklikávání komponent - defaultně sbalené
   const [formularVisible, setFormularVisible] = useState(false);
-  const [denniPrehledVisible, setDenniPrehledVisible] = useState(false);
   const [podrobnyPrehledVisible, setPodrobnyPrehledVisible] = useState(false);
   const [novyZaznamModalVisible, setNovyZaznamModalVisible] = useState(false);
-  const { synchronizujZFirestore } = useFirestoreSync();
-  
   const {
     state,
     mesicniVydaje,
@@ -40,9 +36,6 @@ const DomacnostScreen: React.FC = () => {
     vybranyMesic,
     vybranyRok,
     getNazevMesice,
-    getNazevDne,
-    jeVikend,
-    rozdelZaznamyDoSloupcu,
     smazatPosledniVydaj,
     editovatVydaj,
     smazatVydaj,
@@ -53,16 +46,9 @@ const DomacnostScreen: React.FC = () => {
    */
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      // Synchronizace z Firebase
-      await synchronizujZFirestore();
-      // Aktualizace lokálních dat
-      await nactiData();
-    } catch (error) {
-      console.error('Chyba při aktualizaci dat:', error);
-    } finally {
-      setRefreshing(false);
-    }
+    // Real-time listener automaticky aktualizuje data
+    // Pull-to-refresh pouze poskytuje vizuální feedback
+    setTimeout(() => setRefreshing(false), 500);
   };
 
   /**
@@ -260,101 +246,6 @@ const DomacnostScreen: React.FC = () => {
             </View>
           ) : (
             <>
-              {/* Tabulka domácích výdajů */}
-              {/* Nové tlačítko Denní přehled */}
-              <NovyZaznamButton
-                onPress={() => setDenniPrehledVisible(!denniPrehledVisible)}
-                title="Denní přehled"
-                isCollapsible={true}
-                isExpanded={denniPrehledVisible}
-              />
-
-              {denniPrehledVisible && (
-                <View style={[styles.tabulkaKarticka, styles.uniformniRozestup]}>
-                  <View style={styles.dvousloupcovaKontejner}>
-                    {/* Levý sloupec */}
-                    <View style={styles.sloupec}>
-                    <View style={styles.tableHeader}>
-                      <Text style={styles.headerText}>Den</Text>
-                      <Text style={[styles.headerText, { textAlign: 'right', paddingRight: 10 }]}>Částka</Text>
-                    </View>
-                    <View style={styles.sloupecObsah}>
-                      {(() => {
-                        const { levySloupec } = rozdelZaznamyDoSloupcu();
-                        return levySloupec.map((zaznam, index) => {
-                          const vikend = jeVikend(zaznam.den, vybranyMesic, vybranyRok);
-                          const denVTydnu = getNazevDne(zaznam.den, vybranyMesic, vybranyRok);
-                          const jePosledniRadek = index === levySloupec.length - 1;
-                          return (
-                            <View 
-                              key={zaznam.datum} 
-                              style={[
-                                styles.radekTabulky, 
-                                jePosledniRadek && styles.posledniRadek,
-                                vikend && styles.vikendovyRadek
-                              ]}
-                            >
-                              <Text style={[styles.bunkaTabulkyDen, vikend && styles.vikendovyText]}>
-                                <Text style={styles.poradoveCislo}>{`${zaznam.den}. `}</Text>
-                                <Text style={styles.zkratkaDne}>{denVTydnu}</Text>
-                              </Text>
-                              <Text style={[
-                                styles.bunkaTabulkyCastka,
-                                zaznam.castka > 0 ? styles.castkaCervena : styles.castkaCerna
-                              ]}>
-                                {formatujCastku(zaznam.castka)}
-                              </Text>
-                            </View>
-                          );
-                        });
-                      })()}
-                    </View>
-                  </View>
-                  
-                  {/* Pravý sloupec */}
-                  <View style={[styles.sloupec, styles.pravySloupec]}>
-                    <View style={styles.tableHeader}>
-                      <Text style={styles.headerText}>Den</Text>
-                      <Text style={[styles.headerText, { textAlign: 'right', paddingRight: 10 }]}>Částka</Text>
-                    </View>
-                    <View style={styles.sloupecObsah}>
-                      {(() => {
-                        const { pravySloupec } = rozdelZaznamyDoSloupcu();
-                        return pravySloupec.map((zaznam, index) => {
-                          const vikend = jeVikend(zaznam.den, vybranyMesic, vybranyRok);
-                          const denVTydnu = getNazevDne(zaznam.den, vybranyMesic, vybranyRok);
-                          const jePosledniRadek = index === pravySloupec.length - 1;
-                          return (
-                            <View 
-                              key={zaznam.datum} 
-                              style={[
-                                styles.radekTabulky, 
-                                jePosledniRadek && styles.posledniRadek,
-                                vikend && styles.vikendovyRadek
-                              ]}
-                            >
-                              <Text style={[styles.bunkaTabulkyDen, vikend && styles.vikendovyText]}>
-                                <Text style={styles.poradoveCislo}>{`${zaznam.den}. `}</Text>
-                                <Text style={styles.zkratkaDne}>{denVTydnu}</Text>
-                              </Text>
-                              <Text style={[
-                                styles.bunkaTabulkyCastka,
-                                zaznam.castka > 0 ? styles.castkaCervena : styles.castkaCerna
-                              ]}>
-                                {formatujCastku(zaznam.castka)}
-                              </Text>
-                            </View>
-                          );
-                        });
-                      })()}
-                    </View>
-                  </View>
-                  </View>
-                </View>
-              )}
-
-
-
               {/* Seznam jednotlivých výdajů - DOLE */}
               {/* Nové tlačítko Podrobný přehled */}
               <NovyZaznamButton
@@ -489,20 +380,6 @@ const styles = StyleSheet.create({
     // Odstraněn marginTop pro jednotné rozestupy
   },
 
-  // Styly pro hlavičku Denní přehled uvnitř tabulky
-  denniPrehledHeaderInside: {
-    backgroundColor: '#F5F5F5',
-    padding: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: '#E0E0E0',
-  },
-  denniPrehledHeaderText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-  },
-
   // Styly pro hlavičku Podrobný přehled uvnitř tabulky
   podrobnyPrehledHeaderInside: {
     backgroundColor: '#F5F5F5',
@@ -522,99 +399,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  tabulkaKarticka: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 0,
-    elevation: 2,
-    margin: 8,
-    borderWidth: 2,
-    borderColor: '#E0E0E0',
-    overflow: 'hidden',
-  },
   uniformniRozestup: {
     marginTop: 10, // Zvětšeno o 30% (8 * 1.3 = 10.4 ≈ 10)
   },
   vetsiMezeraNahore: {
     marginTop: 13, // Zvětšeno o 30% navíc (10 * 1.3 = 13)
-  },
-
-  dvousloupcovaKontejner: {
-    flexDirection: 'row',
-    paddingHorizontal: 0,
-    paddingBottom: 8,
-  },
-  sloupec: {
-    flex: 1,
-  },
-  pravySloupec: {
-    flex: 1,
-    borderLeftWidth: 1,
-    borderLeftColor: '#E0E0E0', // Změněno z černé na šedou
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    backgroundColor: '#f5f5f5',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0', // Změněno z černé na šedou
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0', // Změněno z černé na šedou
-  },
-
-  headerText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#555',
-  },
-  sloupecObsah: {
-    paddingHorizontal: 0,
-  },
-  radekTabulky: {
-    flexDirection: 'row',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  posledniRadek: {
-    borderBottomWidth: 0,
-  },
-  vikendovyText: {
-    color: '#E53935', // červená barva pro víkendy
-  },
-  bunkaTabulkyDen: {
-    flex: 1,
-    color: '#333',
-    fontSize: 12,
-    fontWeight: 'normal',
-  },
-  poradoveCislo: {
-    fontSize: 11,
-  },
-  zkratkaDne: {
-    fontWeight: 'bold',
-  },
-  bunkaTabulkyCastka: {
-    flex: 1,
-    textAlign: 'right',
-    color: '#000000', // Základní černá barva
-    fontSize: 13, // Změněno z 12 na 13
-    paddingRight: 10,
-  },
-  castkaFialova: {
-    color: '#E53935', // Červená barva pro nenulové hodnoty
-  },
-  castkaCervena: {
-    color: '#E53935', // Červená barva pro nenulové hodnoty
-  },
-  castkaCerna: {
-    color: '#000000', // Černá barva pro nulové hodnoty
-  },
-  vikendovyRadek: {
-    backgroundColor: '#F5F5F5',
   },
   // Styly pro celkovou částku
   celkemContainer: {

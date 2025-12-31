@@ -1,15 +1,9 @@
 import { 
   collection, 
   doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
   addDoc, 
   updateDoc, 
   deleteDoc, 
-  query, 
-  orderBy,
-  where,
   Timestamp,
   writeBatch
 } from '@firebase/firestore';
@@ -155,49 +149,40 @@ export class FirestoreService {
   }
 
   /**
-   * @description Načtení všech příjmů z Firestore
+   * @description Smazání příjmu z Firestore
    */
-  static async nactiPrijmy(): Promise<FirestorePrijem[]> {
+  static async smazPrijem(id: string): Promise<void> {
     try {
-      const querySnapshot = await getDocs(collection(db, FIRESTORE_COLLECTIONS.PRIJMY));
-      return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as FirestorePrijem[];
+      const docRef = doc(db, FIRESTORE_COLLECTIONS.PRIJMY, id);
+      await deleteDoc(docRef);
     } catch (error) {
-      console.error('Chyba při načítání příjmů z Firestore:', error);
+      console.error('Chyba při mazání příjmu z Firestore:', error);
       throw error;
     }
   }
 
   /**
-   * @description Načtení všech výdajů z Firestore
+   * @description Smazání výdaje z Firestore
    */
-  static async nactiVydaje(): Promise<FirestoreVydaj[]> {
+  static async smazVydaj(id: string): Promise<void> {
     try {
-      const querySnapshot = await getDocs(collection(db, FIRESTORE_COLLECTIONS.VYDAJE));
-      return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as FirestoreVydaj[];
+      const docRef = doc(db, FIRESTORE_COLLECTIONS.VYDAJE, id);
+      await deleteDoc(docRef);
     } catch (error) {
-      console.error('Chyba při načítání výdajů z Firestore:', error);
+      console.error('Chyba při mazání výdaje z Firestore:', error);
       throw error;
     }
   }
 
   /**
-   * @description Načtení všech domácích výdajů z Firestore
+   * @description Smazání domácího výdaje z Firestore
    */
-  static async nactiDomacnostVydaje(): Promise<FirestoreDomacnostVydaj[]> {
+  static async smazDomacnostVydaj(id: string): Promise<void> {
     try {
-      const querySnapshot = await getDocs(collection(db, FIRESTORE_COLLECTIONS.DOMACNOST));
-      return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as FirestoreDomacnostVydaj[];
+      const docRef = doc(db, FIRESTORE_COLLECTIONS.DOMACNOST, id);
+      await deleteDoc(docRef);
     } catch (error) {
-      console.error('Chyba při načítání domácích výdajů z Firestore:', error);
+      console.error('Chyba při mazání domácího výdaje z Firestore:', error);
       throw error;
     }
   }
@@ -353,37 +338,6 @@ export class FirestoreService {
     }
   }
 
-  /**
-   * @description Načtení všech WaxDream příjmů z Firestore
-   */
-  static async nactiWaxDreamPrijmy(): Promise<FirestoreWaxDreamPrijem[]> {
-    try {
-      const querySnapshot = await getDocs(collection(db, FIRESTORE_COLLECTIONS.WAXDREAM_PRIJMY));
-      return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as FirestoreWaxDreamPrijem[];
-    } catch (error) {
-      console.error('Chyba při načítání WaxDream příjmů z Firestore:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * @description Načtení všech WaxDream výdajů z Firestore
-   */
-  static async nactiWaxDreamVydaje(): Promise<FirestoreWaxDreamVydaj[]> {
-    try {
-      const querySnapshot = await getDocs(collection(db, FIRESTORE_COLLECTIONS.WAXDREAM_VYDAJE));
-      return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as FirestoreWaxDreamVydaj[];
-    } catch (error) {
-      console.error('Chyba při načítání WaxDream výdajů z Firestore:', error);
-      throw error;
-    }
-  }
 
   /**
    * @description Aktualizace WaxDream příjmu v Firestore
